@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
+import Icon from './Icon'
+import { PolymartSkeleton } from './Skeleton'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -33,17 +35,22 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
   })
 }
 
+function whatsappUrl(number, text) {
+  const digits = number.replace(/[^0-9]/g, '')
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
+}
+
 const CATEGORIES = [
-  { id: 'all',        label: 'All',        emoji: '🛍️' },
-  { id: 'electronics', label: 'Electronics', emoji: '📱' },
-  { id: 'books',       label: 'Books',       emoji: '📚' },
-  { id: 'clothing',    label: 'Clothing',    emoji: '👕' },
-  { id: 'furniture',   label: 'Furniture',   emoji: '🪑' },
-  { id: 'services',    label: 'Services',    emoji: '🛠️' },
-  { id: 'other',       label: 'Other',       emoji: '📦' },
+  { id: 'all', label: 'All', icon: 'grid' },
+  { id: 'electronics', label: 'Electronics', icon: 'store' },
+  { id: 'books', label: 'Books', icon: 'newspaper' },
+  { id: 'clothing', label: 'Clothing', icon: 'user' },
+  { id: 'furniture', label: 'Furniture', icon: 'home' },
+  { id: 'services', label: 'Services', icon: 'settings' },
+  { id: 'other', label: 'Other', icon: 'share' },
 ]
 
-function PolyMart({ session }) {
+function PolyMart({ session, onOpenChats, onMessageSeller }) {
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeCat, setActiveCat] = useState('all')
@@ -69,7 +76,7 @@ function PolyMart({ session }) {
     setLoading(true)
     const { data } = await supabase
       .from('marketplace_listings')
-      .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department)')
+      .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department, whatsapp_number)')
       .order('created_at', { ascending: false })
     if (data) setListings(data)
     setLoading(false)
@@ -118,85 +125,108 @@ function PolyMart({ session }) {
     setPosting(false)
   }
 
+  function messageSeller(l) {
+    onMessageSeller({
+      listingId: l.id,
+      sellerId: l.seller_id,
+      listingTitle: l.title,
+      sellerName: l.profiles?.full_name,
+    })
+  }
+
   const filtered = listings.filter(l => {
     const matchesCat = activeCat === 'all' || l.category === activeCat
     const matchesSearch = l.title.toLowerCase().includes(search.toLowerCase())
     return matchesCat && matchesSearch
   })
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{
-              width: '10px', height: '10px', borderRadius: '50%', background: '#7C3AED',
-              animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-            }} />
-          ))}
-        </div>
-        <style>{`@keyframes dotPulse {0%,100%{opacity:.2;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}`}</style>
-      </div>
-    )
-  }
-
   // ── DETAIL VIEW ──────────────────────────────────────
   if (selectedListing) {
     const l = selectedListing
+    const isOwnListing = l.seller_id === session.user.id
     return (
-      <div style={{ minHeight: '100vh', background: '#FAFAFA', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
         <div style={{
-          padding: '16px 20px', background: '#ffffff', borderBottom: '1px solid #F1F1F5',
+          padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
           display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10,
         }}>
-          <div onClick={() => setSelectedListing(null)} style={{ cursor: 'pointer', fontSize: '20px', color: '#1A1A2E' }}>←</div>
-          <span style={{ fontWeight: 700, fontSize: '15px', color: '#1A1A2E' }}>Listing details</span>
+          <div onClick={() => setSelectedListing(null)} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
+            <Icon name="chevron-left" size={20} />
+          </div>
+          <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-strong)' }}>Listing details</span>
         </div>
 
         {l.image_url ? (
           <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '260px', objectFit: 'cover' }} />
         ) : (
-          <div style={{ width: '100%', height: '260px', background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '50px' }}>
-            {CATEGORIES.find(c => c.id === l.category)?.emoji || '📦'}
+          <div style={{ width: '100%', height: '260px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--app-accent)' }}>
+            <Icon name={CATEGORIES.find(c => c.id === l.category)?.icon || 'store'} size={36} />
           </div>
         )}
 
         <div style={{ padding: '20px' }}>
-          <div style={{ fontSize: '24px', fontWeight: 900, color: '#7C3AED', marginBottom: '6px' }}>
+          <div style={{ fontSize: '24px', fontWeight: 900, color: 'var(--app-accent)', marginBottom: '6px' }}>
             ${Number(l.price).toFixed(2)}
           </div>
-          <h2 style={{ margin: '0 0 12px', fontSize: '18px', fontWeight: 800, color: '#1A1A2E' }}>{l.title}</h2>
+          <h2 style={{ margin: '0 0 12px', fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>{l.title}</h2>
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '18px' }}>
             <div style={{
-              width: '36px', height: '36px', borderRadius: '10px', background: '#F5F3FF',
-              color: '#7C3AED', fontWeight: 700, fontSize: '13px',
+              width: '36px', height: '36px', borderRadius: '50%', background: 'var(--app-accent-soft)',
+              color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               {(l.profiles?.full_name || 'S').split(' ').map(n => n[0]).slice(0, 2).join('')}
             </div>
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#1A1A2E' }}>{l.profiles?.full_name || 'PolyNet Student'}</div>
-              <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>{l.profiles?.department} · {timeAgo(l.created_at)}</div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)' }}>{l.profiles?.full_name || 'PolyNet Student'}</div>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{l.profiles?.department} · {timeAgo(l.created_at)}</div>
             </div>
           </div>
 
           {l.description && (
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', letterSpacing: '0.5px', marginBottom: '6px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: '6px' }}>
                 DESCRIPTION
               </div>
-              <p style={{ margin: 0, fontSize: '14px', color: '#374151', lineHeight: 1.6 }}>{l.description}</p>
+              <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-body)', lineHeight: 1.6 }}>{l.description}</p>
             </div>
           )}
 
-          <button style={{
-            width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
-            background: '#7C3AED', color: '#fff', fontWeight: 700, fontSize: '15px',
-            cursor: 'pointer', boxShadow: '0 4px 20px rgba(124,58,237,0.3)',
-          }}>
-            💬 Message Seller
-          </button>
+          {isOwnListing ? (
+            <div style={{ padding: '14px', borderRadius: '14px', background: 'var(--app-accent-soft)', color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px', textAlign: 'center' }}>
+              This is your listing
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => messageSeller(l)} style={{
+                flex: 1, padding: '15px', borderRadius: '14px', border: 'none',
+                background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '14px',
+                cursor: 'pointer', boxShadow: 'var(--shadow-accent)',
+              }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <Icon name="message-circle" size={16} />
+                  Message Seller
+                </span>
+              </button>
+              {l.profiles?.whatsapp_number && (
+                <a
+                  href={whatsappUrl(l.profiles.whatsapp_number, `Hi, I'm interested in your "${l.title}" listing on PolyNet.`)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    flex: 1, padding: '15px', borderRadius: '14px', border: '1.5px solid #25D366',
+                    background: 'transparent', color: '#25D366', fontWeight: 700, fontSize: '14px',
+                    cursor: 'pointer', textDecoration: 'none', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', gap: '8px', boxSizing: 'border-box',
+                  }}
+                >
+                  <Icon name="whatsapp" size={16} color="#25D366" />
+                  WhatsApp
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -204,32 +234,40 @@ function PolyMart({ session }) {
 
   // ── MAIN GRID VIEW ───────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: '#FAFAFA', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
 
       <div style={{
-        padding: '18px 20px 14px', background: '#ffffff', borderBottom: '1px solid #F1F1F5',
+        padding: '18px 20px 14px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <img src="/logo.png" alt="PolyNet" style={{ width: '36px', height: '36px', borderRadius: '10px', objectFit: 'contain' }} />
             <div>
-              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#7C3AED', letterSpacing: '-0.3px' }}>PolyMart</h1>
-              <p style={{ margin: '1px 0 0', fontSize: '11.5px', color: '#94A3B8', fontWeight: 600 }}>Buy & sell on campus</p>
+              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--app-accent)', letterSpacing: '-0.3px' }}>PolyMart</h1>
+              <p style={{ margin: '1px 0 0', fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 600 }}>Buy & sell on campus</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowComposer(!showComposer)}
-            style={{
-              width: '40px', height: '40px', borderRadius: '12px',
-              background: '#7C3AED', color: '#fff', border: 'none',
-              fontSize: '22px', fontWeight: 300, cursor: 'pointer',
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={onOpenChats} style={{
+              width: '40px', height: '40px', borderRadius: '12px', background: 'transparent',
+              color: 'var(--text-strong)', border: 'none', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(124,58,237,0.3)',
-            }}
-          >
-            {showComposer ? '×' : '+'}
-          </button>
+            }}>
+              <Icon name="inbox" size={20} />
+            </button>
+            <button
+              onClick={() => setShowComposer(!showComposer)}
+              style={{
+                width: '40px', height: '40px', borderRadius: '12px',
+                background: 'var(--app-accent)', color: '#fff', border: 'none',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: 'var(--shadow-accent)',
+              }}
+            >
+              <Icon name={showComposer ? 'x' : 'plus'} size={18} />
+            </button>
+          </div>
         </div>
 
         <input
@@ -238,7 +276,7 @@ function PolyMart({ session }) {
           placeholder="Search PolyMart..."
           style={{
             width: '100%', padding: '11px 14px', borderRadius: '12px',
-            border: '1.5px solid #F1F1F5', background: '#FAFAFA',
+            border: '1.5px solid var(--app-border)', background: 'var(--page-bg)', color: 'var(--text-strong)',
             fontSize: '13.5px', outline: 'none', boxSizing: 'border-box', marginBottom: '12px',
           }}
         />
@@ -251,11 +289,14 @@ function PolyMart({ session }) {
               style={{
                 padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
                 whiteSpace: 'nowrap', cursor: 'pointer',
-                background: activeCat === cat.id ? '#7C3AED' : '#F5F3FF',
-                color: activeCat === cat.id ? '#fff' : '#7C3AED',
+                background: activeCat === cat.id ? 'var(--app-accent)' : 'var(--app-accent-soft)',
+                color: activeCat === cat.id ? '#fff' : 'var(--app-accent)',
               }}
             >
-              {cat.emoji} {cat.label}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <Icon name={cat.icon} size={12} />
+                {cat.label}
+              </span>
             </div>
           ))}
         </div>
@@ -263,15 +304,15 @@ function PolyMart({ session }) {
 
       {/* Composer */}
       {showComposer && (
-        <div style={{ padding: '16px 20px', background: '#ffffff', borderBottom: '1px solid #F1F1F5' }}>
+        <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)' }}>
           <input
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="What are you selling?"
             style={{
               width: '100%', padding: '12px', borderRadius: '12px',
-              border: '1.5px solid #F1F1F5', background: '#FAFAFA',
-              fontSize: '14px', color: '#1A1A2E', outline: 'none',
+              border: '1.5px solid var(--app-border)', background: 'var(--page-bg)',
+              fontSize: '14px', color: 'var(--text-strong)', outline: 'none',
               boxSizing: 'border-box', marginBottom: '10px',
             }}
           />
@@ -281,8 +322,8 @@ function PolyMart({ session }) {
             placeholder="Price ($)"
             style={{
               width: '100%', padding: '12px', borderRadius: '12px',
-              border: '1.5px solid #F1F1F5', background: '#FAFAFA',
-              fontSize: '14px', color: '#1A1A2E', outline: 'none',
+              border: '1.5px solid var(--app-border)', background: 'var(--page-bg)',
+              fontSize: '14px', color: 'var(--text-strong)', outline: 'none',
               boxSizing: 'border-box', marginBottom: '10px',
             }}
           />
@@ -293,8 +334,8 @@ function PolyMart({ session }) {
             rows={3}
             style={{
               width: '100%', padding: '12px', borderRadius: '12px',
-              border: '1.5px solid #F1F1F5', background: '#FAFAFA',
-              fontSize: '14px', color: '#1A1A2E', resize: 'none', outline: 'none',
+              border: '1.5px solid var(--app-border)', background: 'var(--page-bg)',
+              fontSize: '14px', color: 'var(--text-strong)', resize: 'none', outline: 'none',
               boxSizing: 'border-box', fontFamily: 'inherit', marginBottom: '10px',
             }}
           />
@@ -307,11 +348,14 @@ function PolyMart({ session }) {
                 style={{
                   padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
                   cursor: 'pointer',
-                  background: category === cat.id ? '#7C3AED' : '#F5F3FF',
-                  color: category === cat.id ? '#fff' : '#7C3AED',
+                  background: category === cat.id ? 'var(--app-accent)' : 'var(--app-accent-soft)',
+                  color: category === cat.id ? '#fff' : 'var(--app-accent)',
                 }}
               >
-                {cat.emoji} {cat.label}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <Icon name={cat.icon} size={12} />
+                  {cat.label}
+                </span>
               </div>
             ))}
           </div>
@@ -336,10 +380,10 @@ function PolyMart({ session }) {
 
           <label style={{
             display: 'inline-flex', width: '32px', height: '32px', borderRadius: '10px',
-            background: '#F5F3FF', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', fontSize: '16px', marginBottom: '12px',
+            background: 'var(--app-accent-soft)', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', marginBottom: '12px', color: 'var(--app-accent)',
           }}>
-            📷
+            <Icon name="camera" size={16} />
             <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
           </label>
 
@@ -348,7 +392,7 @@ function PolyMart({ session }) {
             disabled={posting || uploading || !title.trim() || !price}
             style={{
               width: '100%', padding: '12px', borderRadius: '12px', border: 'none',
-              background: (title.trim() && price) ? '#7C3AED' : '#E2E0FF',
+              background: (title.trim() && price) ? 'var(--app-accent)' : 'var(--app-border-soft)',
               color: '#fff', fontWeight: 700, fontSize: '14px',
               cursor: (title.trim() && price) ? 'pointer' : 'default',
             }}
@@ -358,10 +402,14 @@ function PolyMart({ session }) {
         </div>
       )}
 
+      {loading ? <PolymartSkeleton /> : (
+      <>
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '80px 30px' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px', opacity: 0.3 }}>🛍️</div>
-          <p style={{ color: '#94A3B8', fontSize: '14px' }}>No listings found</p>
+          <div style={{ marginBottom: '12px', opacity: 0.35, color: 'var(--app-accent)' }}>
+            <Icon name="store" size={32} />
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No listings found</p>
         </div>
       )}
 
@@ -375,35 +423,37 @@ function PolyMart({ session }) {
             key={l.id}
             onClick={() => setSelectedListing(l)}
             style={{
-              background: '#ffffff', borderRadius: '16px', overflow: 'hidden',
-              border: '1px solid #F1F1F5', cursor: 'pointer',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
+              background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
+              border: '1px solid var(--app-border)', cursor: 'pointer',
+              boxShadow: 'var(--shadow-card)',
             }}
           >
             {l.image_url ? (
               <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }} />
             ) : (
-              <div style={{ width: '100%', height: '120px', background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
-                {CATEGORIES.find(c => c.id === l.category)?.emoji || '📦'}
+              <div style={{ width: '100%', height: '120px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--app-accent)' }}>
+                <Icon name={CATEGORIES.find(c => c.id === l.category)?.icon || 'store'} size={28} />
               </div>
             )}
             <div style={{ padding: '10px' }}>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: '#7C3AED' }}>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
                 ${Number(l.price).toFixed(2)}
               </div>
               <div style={{
-                fontSize: '12.5px', fontWeight: 600, color: '#1A1A2E', marginTop: '2px',
+                fontSize: '12.5px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {l.title}
               </div>
-              <div style={{ fontSize: '10.5px', color: '#B4B4C0', marginTop: '4px' }}>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
                 {timeAgo(l.created_at)}
               </div>
             </div>
           </div>
         ))}
       </div>
+      </>
+      )}
 
       <div style={{ height: '20px' }} />
     </div>
