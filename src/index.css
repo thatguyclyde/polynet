@@ -11,6 +11,23 @@
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
+  /* PolyNet app tokens (light) */
+  --page-bg: #faf8ff;
+  --card-bg: #ffffff;
+  --nav-bg: rgba(255, 255, 255, 0.96);
+  --text-strong: #1f1635;
+  --text-muted: #8b7aa6;
+  --text-body: #4b5563;
+  --app-accent: #7c3aed;
+  --app-accent-soft: #f3ebff;
+  --app-border: #f1ebff;
+  --app-border-soft: #efe7ff;
+  --input-bg: #fcfbff;
+  --danger: #ef4444;
+  --success: #16a34a;
+  --shadow-card: 0 8px 28px rgba(124, 58, 237, 0.05);
+  --shadow-accent: 0 4px 20px rgba(124, 58, 237, 0.3);
+
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -31,7 +48,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --text: #9ca3af;
     --text-h: #f3f4f6;
     --bg: #16171d;
@@ -43,6 +60,22 @@
     --social-bg: rgba(47, 48, 58, 0.5);
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+
+    --page-bg: #000000;
+    --card-bg: #121214;
+    --nav-bg: rgba(10, 10, 12, 0.92);
+    --text-strong: #f5f3ff;
+    --text-muted: #a79db8;
+    --text-body: #d1d1d6;
+    --app-accent: #c084fc;
+    --app-accent-soft: rgba(192, 132, 252, 0.16);
+    --app-border: #262629;
+    --app-border-soft: #1f1f23;
+    --input-bg: #17171b;
+    --danger: #f87171;
+    --success: #4ade80;
+    --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.35);
+    --shadow-accent: 0 4px 20px rgba(192, 132, 252, 0.25);
   }
 
   #social .button-icon {
@@ -50,13 +83,48 @@
   }
 }
 
+:root[data-theme='dark'] {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --border: #2e303a;
+  --code-bg: #1f2028;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+  --social-bg: rgba(47, 48, 58, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+
+  --page-bg: #000000;
+  --card-bg: #121214;
+  --nav-bg: rgba(10, 10, 12, 0.92);
+  --text-strong: #f5f3ff;
+  --text-muted: #a79db8;
+  --text-body: #d1d1d6;
+  --app-accent: #c084fc;
+  --app-accent-soft: rgba(192, 132, 252, 0.16);
+  --app-border: #262629;
+  --app-border-soft: #1f1f23;
+  --input-bg: #17171b;
+  --danger: #f87171;
+  --success: #4ade80;
+  --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --shadow-accent: 0 4px 20px rgba(192, 132, 252, 0.25);
+}
+
+:root[data-theme='dark'] #social .button-icon {
+  filter: invert(1) brightness(2);
+}
+
 body {
   margin: 0;
+  background: var(--page-bg);
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
+  max-width: 520px;
+  width: 100%;
   margin: 0 auto;
   text-align: center;
   border-inline: 1px solid var(--border);
@@ -64,6 +132,12 @@ body {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  background: var(--page-bg);
+  transition: background 0.2s ease;
+
+  @media (max-width: 560px) {
+    border-inline: none;
+  }
 }
 
 h1,

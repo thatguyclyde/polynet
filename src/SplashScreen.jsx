@@ -2,14 +2,14 @@ import { useEffect } from 'react'
 
 function SplashScreen({ onDone }) {
   useEffect(() => {
-    const timer = setTimeout(() => onDone(), 6500)
+    const timer = setTimeout(() => onDone(), 1800)
     return () => clearTimeout(timer)
   }, [])
 
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#ffffff',
+      background: 'var(--page-bg)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
