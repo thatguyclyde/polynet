@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion' // Added Framer Motion
+import { motion, AnimatePresence } from 'framer-motion'
+import { Home, Newspaper, Store, UserCircle } from 'lucide-react' // Added Lucide Icons
 import { supabase } from './supabase'
 import SplashScreen from './SplashScreen'
 import SignUp from './SignUp'
@@ -9,12 +10,29 @@ import News from './News'
 import Polymart from './Polymart'
 import Profile from './Profile'
 
+// Replaced image paths with Lucide icon components
 const TABS = [
-  { id: 'feed',     icon: '/icons/feed.jpg',     label: 'Feed' },
-  { id: 'news',     icon: '/icons/news.jpg',     label: 'News' },
-  { id: 'polymart', icon: '/icons/polymart.jpg', label: 'Polymart' },
-  { id: 'profile',  icon: '/icons/profile.jpg',  label: 'Profile' },
+  { id: 'feed',     icon: Home,       label: 'Feed' },
+  { id: 'news',     icon: Newspaper,  label: 'News' },
+  { id: 'polymart', icon: Store,      label: 'Polymart' },
+  { id: 'profile',  icon: UserCircle, label: 'Profile' },
 ]
+
+// Slide animation physics
+const slideVariants = {
+  enter: (direction) => ({
+    x: direction > 0 ? '100%' : '-100%',
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (direction) => ({
+    x: direction < 0 ? '100%' : '-100%',
+    opacity: 0,
+  }),
+}
 
 function ComingSoonDots() {
   return (
@@ -45,9 +63,10 @@ function App() {
   const [loading, setLoading]     = useState(false)
   const [message, setMessage]     = useState('')
   const [authView, setAuthView]   = useState('login')
-  
-  // Touch gestures state
+ 
+  // Touch gestures & slide direction state
   const [touchStartX, setTouchStartX] = useState(0)
+  const [direction, setDirection]     = useState(0)
 
   useEffect(() => {
     const checkUserProfile = async (userSession) => {
@@ -100,15 +119,28 @@ function App() {
   const onTouchEnd = (e) => {
     const touchEndX = e.changedTouches[0].clientX
     const diff = touchStartX - touchEndX
-    
+   
     if (Math.abs(diff) > 50) {
       const currentIndex = TABS.findIndex(tab => tab.id === page)
       if (diff > 0 && currentIndex < TABS.length - 1) {
+        setDirection(1)
         setPage(TABS[currentIndex + 1].id)
       }
       if (diff < 0 && currentIndex > 0) {
+        setDirection(-1)
         setPage(TABS[currentIndex - 1].id)
       }
+    }
+  }
+
+  // Click handler to calculate slide direction
+  const handleTabClick = (targetId) => {
+    const currentIndex = TABS.findIndex(t => t.id === page)
+    const targetIndex = TABS.findIndex(t => t.id === targetId)
+    
+    if (currentIndex !== targetIndex) {
+      setDirection(targetIndex > currentIndex ? 1 : -1)
+      setPage(targetId)
     }
   }
 
@@ -126,10 +158,10 @@ function App() {
     setLoading(true)
     setMessage('')
     const { error } = await supabase.auth.signUp({ email, password })
-    if (error) { 
-      setMessage(error.message) 
-    } else { 
-      setMessage('Check your email to confirm your account!') 
+    if (error) {
+      setMessage(error.message)
+    } else {
+      setMessage('Check your email to confirm your account!')
     }
     setLoading(false)
   }
@@ -153,8 +185,10 @@ function App() {
         style={{
           background: '#ffffff',
           minHeight: '100vh',
-          paddingBottom: '70px',
           fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden', // Prevents body scrollbar during page slides
         }}
       >
         <style>{`
@@ -164,11 +198,38 @@ function App() {
           }
         `}</style>
 
-        {page === 'feed' && <Feed session={session} />}
-        {page === 'news' && <News session={session} />}
-        {page === 'polymart' && <Polymart session={session} />}
-        {page === 'profile' && <Profile session={session} />}
+        {/* Sliding Page Container */}
+        <div style={{ flex: 1, position: 'relative', overflowX: 'hidden', paddingBottom: '70px' }}>
+          <AnimatePresence initial={false} custom={direction}>
+            <motion.div
+              key={page}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                x: { type: "spring", stiffness: 300, damping: 30 },
+                opacity: { duration: 0.2 }
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                overflowY: 'auto', // Allows the page content itself to scroll
+              }}
+            >
+              {page === 'feed' && <Feed session={session} />}
+              {page === 'news' && <News session={session} />}
+              {page === 'polymart' && <Polymart session={session} />}
+              {page === 'profile' && <Profile session={session} />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
 
+        {/* Bottom Navigation */}
         <div style={{
           position: 'fixed',
           bottom: 0, left: 0, right: 0,
@@ -181,10 +242,12 @@ function App() {
         }}>
           {TABS.map(tab => {
             const isActive = page === tab.id
+            const IconComponent = tab.icon // The lucide icon component
+            
             return (
-              <motion.div 
-                key={tab.id} 
-                onClick={() => setPage(tab.id)} 
+              <motion.div
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id)}
                 whileTap={{ scale: 0.9 }}
                 transition={{ type: "spring", stiffness: 500, damping: 30 }}
                 style={{
@@ -212,17 +275,14 @@ function App() {
                   />
                 )}
 
-                <img
-                  src={tab.icon}
-                  alt={tab.label}
-                  style={{ 
-                    width: '24px', 
-                    height: '24px', 
-                    objectFit: 'contain', 
-                    borderRadius: '6px',
-                    opacity: isActive ? 1 : 0.4,
+                {/* Lucide Icon dynamically styled */}
+                <IconComponent
+                  size={24}
+                  strokeWidth={isActive ? 2.5 : 2}
+                  color={isActive ? '#7C3AED' : '#CBD5E1'}
+                  style={{
                     transform: isActive ? 'scale(1.05)' : 'scale(1)',
-                    transition: 'opacity 0.2s, transform 0.2s'
+                    transition: 'transform 0.2s, color 0.2s'
                   }}
                 />
                 <span style={{
@@ -241,6 +301,7 @@ function App() {
     )
   }
 
+  // --- Auth View Layout (Untouched) ---
   return (
     <div style={{
       minHeight: '100vh',
@@ -289,7 +350,7 @@ function App() {
               width: '100%', padding: '14px', marginBottom: '12px',
               borderRadius: '14px', border: '1.5px solid #E8E4FF',
               background: '#fff', color: '#1A1A2E', fontSize: '15px',
-              boxSizing: 'box-sizing', outline: 'none',
+              boxSizing: 'border-box', outline: 'none',
             }}
           />
           <input
@@ -301,7 +362,7 @@ function App() {
               width: '100%', padding: '14px', marginBottom: '20px',
               borderRadius: '14px', border: '1.5px solid #E8E4FF',
               background: '#fff', color: '#1A1A2E', fontSize: '15px',
-              boxSizing: 'box-sizing', outline: 'none',
+              boxSizing: 'border-box', outline: 'none',
             }}
           />
           <button type="submit" disabled={loading} style={{
@@ -312,7 +373,7 @@ function App() {
           }}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-          <button type="button" onClick={() => setAuthView('signup')}  disabled={loading} style={{
+          <button type="button" onClick={() => setAuthView('signup')} disabled={loading} style={{
             width: '100%', padding: '15px', borderRadius: '14px',
             border: '1.5px solid #7C3AED', background: 'transparent',
             color: '#7C3AED', fontWeight: 700, fontSize: '16px', cursor: 'pointer',
