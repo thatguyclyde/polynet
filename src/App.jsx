@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Newspaper, Store, UserCircle } from 'lucide-react' // Added Lucide Icons
+import { Home, Newspaper, Store, UserCircle, X } from 'lucide-react'
 import { supabase } from './supabase'
 import SplashScreen from './SplashScreen'
 import SignUp from './SignUp'
@@ -10,29 +10,13 @@ import News from './News'
 import Polymart from './Polymart'
 import Profile from './Profile'
 
-// Replaced image paths with Lucide icon components
+// Only 3 tabs now — Profile moved to the global top-right icon.
+// Chats will become the 4th tab once Chats.jsx is built.
 const TABS = [
-  { id: 'feed',     icon: Home,       label: 'Feed' },
-  { id: 'news',     icon: Newspaper,  label: 'News' },
-  { id: 'polymart', icon: Store,      label: 'Polymart' },
-  { id: 'profile',  icon: UserCircle, label: 'Profile' },
+  { id: 'feed', icon: Home, label: 'Home' },
+  { id: 'news', icon: Newspaper, label: 'News' },
+  { id: 'polymart', icon: Store, label: 'Polymart' },
 ]
-
-// Slide animation physics
-const slideVariants = {
-  enter: (direction) => ({
-    x: direction > 0 ? '100%' : '-100%',
-    opacity: 0,
-  }),
-  center: {
-    x: 0,
-    opacity: 1,
-  },
-  exit: (direction) => ({
-    x: direction < 0 ? '100%' : '-100%',
-    opacity: 0,
-  }),
-}
 
 function ComingSoonDots() {
   return (
@@ -48,25 +32,29 @@ function ComingSoonDots() {
           }} />
         ))}
       </div>
+      <style>{`
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.2; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+      `}</style>
     </div>
   )
 }
 
 function App() {
-  const [splash, setSplash]       = useState(true)
-  const [session, setSession]     = useState(null)
+  const [splash, setSplash] = useState(true)
+  const [session, setSession] = useState(null)
   const [onboarded, setOnboarded] = useState(false)
-  const [checking, setChecking]   = useState(true)
-  const [page, setPage]           = useState('feed')
-  const [email, setEmail]         = useState('')
-  const [password, setPassword]   = useState('')
-  const [loading, setLoading]     = useState(false)
-  const [message, setMessage]     = useState('')
-  const [authView, setAuthView]   = useState('login')
- 
-  // Touch gestures & slide direction state
-  const [touchStartX, setTouchStartX] = useState(0)
-  const [direction, setDirection]     = useState(0)
+  const [checking, setChecking] = useState(true)
+  const [page, setPage] = useState('feed')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [authView, setAuthView] = useState('login')
+  const [showProfile, setShowProfile] = useState(false)
+  const [myAvatar, setMyAvatar] = useState(null)
 
   useEffect(() => {
     const checkUserProfile = async (userSession) => {
@@ -75,19 +63,20 @@ function App() {
         return
       }
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('profiles')
-          .select('full_name, department, year_of_study')
+          .select('full_name, department, year_of_study, avatar_url')
           .eq('id', userSession.user.id)
-          .single()
+          .maybeSingle()
 
         if (data && data.full_name && data.department && data.year_of_study) {
           setOnboarded(true)
         } else {
           setOnboarded(false)
         }
+        if (data?.avatar_url) setMyAvatar(data.avatar_url)
       } catch (err) {
-        console.error("Error fetching profile:", err)
+        console.error('Error fetching profile:', err)
       } finally {
         setChecking(false)
       }
@@ -111,39 +100,6 @@ function App() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  // Touch handlers for swipe navigation
-  const onTouchStart = (e) => {
-    setTouchStartX(e.targetTouches[0].clientX)
-  }
-
-  const onTouchEnd = (e) => {
-    const touchEndX = e.changedTouches[0].clientX
-    const diff = touchStartX - touchEndX
-   
-    if (Math.abs(diff) > 50) {
-      const currentIndex = TABS.findIndex(tab => tab.id === page)
-      if (diff > 0 && currentIndex < TABS.length - 1) {
-        setDirection(1)
-        setPage(TABS[currentIndex + 1].id)
-      }
-      if (diff < 0 && currentIndex > 0) {
-        setDirection(-1)
-        setPage(TABS[currentIndex - 1].id)
-      }
-    }
-  }
-
-  // Click handler to calculate slide direction
-  const handleTabClick = (targetId) => {
-    const currentIndex = TABS.findIndex(t => t.id === page)
-    const targetIndex = TABS.findIndex(t => t.id === targetId)
-    
-    if (currentIndex !== targetIndex) {
-      setDirection(targetIndex > currentIndex ? 1 : -1)
-      setPage(targetId)
-    }
-  }
-
   const handleLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -166,6 +122,25 @@ function App() {
     setLoading(false)
   }
 
+  function handleTabClick(targetId) {
+    if (navigator.vibrate) navigator.vibrate(8)
+    setPage(targetId)
+  }
+
+  // ── Sticky, finger-following drag using Framer Motion's native drag ──
+  function handleDragEnd(event, info) {
+    const threshold = 90 // px of real drag distance required to commit
+    const currentIndex = TABS.findIndex(t => t.id === page)
+
+    if (info.offset.x < -threshold && currentIndex < TABS.length - 1) {
+      setPage(TABS[currentIndex + 1].id)
+    } else if (info.offset.x > threshold && currentIndex > 0) {
+      setPage(TABS[currentIndex - 1].id)
+    }
+    // If the drag didn't cross the threshold, Framer Motion automatically
+    // springs the page back to x:0 — that's the "sticky, stops with your finger" feel.
+  }
+
   if (splash) return <SplashScreen onDone={() => setSplash(false)} />
   if (checking) return <ComingSoonDots />
 
@@ -179,18 +154,13 @@ function App() {
 
   if (session && onboarded) {
     return (
-      <div
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        style={{
-          background: '#ffffff',
-          minHeight: '100vh',
-          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden', // Prevents body scrollbar during page slides
-        }}
-      >
+      <div style={{
+        background: '#ffffff',
+        minHeight: '100vh',
+        fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
         <style>{`
           @keyframes dotPulse {
             0%, 100% { opacity: 0.2; transform: scale(0.8); }
@@ -198,38 +168,51 @@ function App() {
           }
         `}</style>
 
-        {/* Sliding Page Container */}
-        <div style={{ flex: 1, position: 'relative', overflowX: 'hidden', paddingBottom: '70px' }}>
-          <AnimatePresence initial={false} custom={direction}>
-            <motion.div
-              key={page}
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                x: { type: "spring", stiffness: 300, damping: 30 },
-                opacity: { duration: 0.2 }
-              }}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                overflowY: 'auto', // Allows the page content itself to scroll
-              }}
-            >
-              {page === 'feed' && <Feed session={session} />}
-              {page === 'news' && <News session={session} />}
-              {page === 'polymart' && <Polymart session={session} />}
-              {page === 'profile' && <Profile session={session} />}
-            </motion.div>
-          </AnimatePresence>
+        {/* Global top-right profile icon — works from every page, like Google */}
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
+          display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
+          pointerEvents: 'none',
+        }}>
+          <motion.div
+            whileTap={{ scale: 0.85 }}
+            onClick={() => setShowProfile(true)}
+            style={{
+              width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
+              background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', pointerEvents: 'auto',
+              border: '2px solid #fff', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+            }}
+          >
+            {myAvatar ? (
+              <img src={myAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <UserCircle size={22} color="#7C3AED" />
+            )}
+          </motion.div>
         </div>
 
-        {/* Bottom Navigation */}
+        {/* Sticky drag-following page container */}
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: '70px' }}>
+          <motion.div
+            key={page}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.65}
+            onDragEnd={handleDragEnd}
+            animate={{ x: 0 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 38 }}
+            style={{
+              width: '100%', height: '100%', overflowY: 'auto', touchAction: 'pan-y',
+            }}
+          >
+            {page === 'feed' && <Feed session={session} />}
+            {page === 'news' && <News session={session} />}
+            {page === 'polymart' && <Polymart session={session} />}
+          </motion.div>
+        </div>
+
+        {/* Bottom Navigation — 3 tabs, Chats added later as 4th */}
         <div style={{
           position: 'fixed',
           bottom: 0, left: 0, right: 0,
@@ -242,53 +225,35 @@ function App() {
         }}>
           {TABS.map(tab => {
             const isActive = page === tab.id
-            const IconComponent = tab.icon // The lucide icon component
-            
+            const IconComponent = tab.icon
             return (
               <motion.div
                 key={tab.id}
                 onClick={() => handleTabClick(tab.id)}
-                whileTap={{ scale: 0.9 }}
-                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                whileTap={{ scale: 0.85 }}
                 style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '3px',
-                  cursor: 'pointer',
-                  position: 'relative',
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', gap: '3px', cursor: 'pointer', position: 'relative',
                 }}
               >
                 {isActive && (
                   <motion.div
                     layoutId="activeTabBackground"
-                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                     style={{
-                      position: 'absolute',
-                      top: '-4px',
-                      width: '40px',
-                      height: '4px',
-                      background: '#7C3AED',
-                      borderRadius: '2px',
+                      position: 'absolute', top: '-4px', width: '40px', height: '4px',
+                      background: '#7C3AED', borderRadius: '2px',
                     }}
                   />
                 )}
-
-                {/* Lucide Icon dynamically styled */}
                 <IconComponent
                   size={24}
                   strokeWidth={isActive ? 2.5 : 2}
                   color={isActive ? '#7C3AED' : '#CBD5E1'}
-                  style={{
-                    transform: isActive ? 'scale(1.05)' : 'scale(1)',
-                    transition: 'transform 0.2s, color 0.2s'
-                  }}
+                  style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
                 />
                 <span style={{
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  letterSpacing: '0.5px',
+                  fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
                   color: isActive ? '#7C3AED' : '#CBD5E1',
                 }}>
                   {tab.label}
@@ -297,11 +262,46 @@ function App() {
             )
           })}
         </div>
+
+        {/* Profile slide-over — global, opens from top-right icon */}
+        <AnimatePresence>
+          {showProfile && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setShowProfile(false)}
+                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200 }}
+              />
+              <motion.div
+                initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+                transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+                style={{
+                  position: 'fixed', top: 0, bottom: 0, right: 0, width: '100%',
+                  background: '#ffffff', zIndex: 201, overflowY: 'auto',
+                }}
+              >
+                <motion.div
+                  whileTap={{ scale: 0.85 }}
+                  onClick={() => setShowProfile(false)}
+                  style={{
+                    position: 'absolute', top: '16px', left: '16px', zIndex: 5,
+                    width: '36px', height: '36px', borderRadius: '12px',
+                    background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <X size={18} color="#7C3AED" />
+                </motion.div>
+                <Profile session={session} />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
 
-  // --- Auth View Layout (Untouched) ---
+  // --- Auth View Layout ---
   return (
     <div style={{
       minHeight: '100vh',
@@ -323,20 +323,12 @@ function App() {
       }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h1 style={{
-            color: '#1A1A2E',
-            margin: '0 0 4px',
-            fontSize: '28px',
-            fontWeight: 900,
-            letterSpacing: '-0.5px',
+            color: '#1A1A2E', margin: '0 0 4px', fontSize: '28px',
+            fontWeight: 900, letterSpacing: '-0.5px',
           }}>PolyNet</h1>
           <p style={{
-            color: '#7C3AED',
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '3px',
-            margin: 0,
-            fontStyle: 'italic',
-            fontFamily: 'Georgia, serif',
+            color: '#7C3AED', fontSize: '11px', fontWeight: 700,
+            letterSpacing: '3px', margin: 0, fontStyle: 'italic', fontFamily: 'Georgia, serif',
           }}>Link Up</p>
         </div>
 
@@ -365,21 +357,21 @@ function App() {
               boxSizing: 'border-box', outline: 'none',
             }}
           />
-          <button type="submit" disabled={loading} style={{
+          <motion.button whileTap={{ scale: 0.96 }} type="submit" disabled={loading} style={{
             width: '100%', padding: '15px', borderRadius: '14px',
             border: 'none', background: '#7C3AED', color: '#fff',
             fontWeight: 700, fontSize: '16px', marginBottom: '12px',
             cursor: 'pointer', boxShadow: '0 4px 20px rgba(124,58,237,0.35)',
           }}>
             {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-          <button type="button" onClick={() => setAuthView('signup')} disabled={loading} style={{
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setAuthView('signup')} disabled={loading} style={{
             width: '100%', padding: '15px', borderRadius: '14px',
             border: '1.5px solid #7C3AED', background: 'transparent',
             color: '#7C3AED', fontWeight: 700, fontSize: '16px', cursor: 'pointer',
           }}>
             Create Account
-          </button>
+          </motion.button>
         </form>
 
         {message && (

@@ -61,18 +61,24 @@ function Avatar({ url, name, size = 40, onClick }) {
   )
 }
 
-function Feed({ session, onOpenChats, onViewProfile }) {
+function Feed({ session, onOpenChats, onViewProfile, onOpenOwnProfile }) {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showComposer, setShowComposer] = useState(false)
+  const [myAvatar, setMyAvatar] = useState(null)
+
+  // Composer panel state
+  const [composerOpen, setComposerOpen] = useState(false)
+  const [composerStep, setComposerStep] = useState('choose') // 'choose' | 'text' | 'photo'
   const [newContent, setNewContent] = useState('')
   const [newType, setNewType] = useState('general')
   const [posting, setPosting] = useState(false)
-  const [likedIds, setLikedIds] = useState(new Set())
-  const [burstId, setBurstId] = useState(null)
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [showCaptionField, setShowCaptionField] = useState(false)
+
+  const [likedIds, setLikedIds] = useState(new Set())
+  const [burstId, setBurstId] = useState(null)
   const [openComments, setOpenComments] = useState(null)
   const [commentsByPost, setCommentsByPost] = useState({})
   const [newComment, setNewComment] = useState('')
@@ -80,7 +86,17 @@ function Feed({ session, onOpenChats, onViewProfile }) {
 
   useEffect(() => {
     fetchPosts()
+    fetchMyAvatar()
   }, [])
+
+  async function fetchMyAvatar() {
+    const { data } = await supabase
+      .from('profiles')
+      .select('avatar_url')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    if (data) setMyAvatar(data.avatar_url)
+  }
 
   async function fetchPosts() {
     setLoading(true)
@@ -91,6 +107,23 @@ function Feed({ session, onOpenChats, onViewProfile }) {
       .limit(30)
     if (data) setPosts(data)
     setLoading(false)
+  }
+
+  function openComposer() {
+    setComposerOpen(true)
+    setComposerStep('choose')
+  }
+
+  function closeComposer() {
+    setComposerOpen(false)
+    setTimeout(() => {
+      setComposerStep('choose')
+      setNewContent('')
+      setNewType('general')
+      setImageFile(null)
+      setImagePreview(null)
+      setShowCaptionField(false)
+    }, 300) // wait for slide-out animation before resetting
   }
 
   async function handleImageSelect(e) {
@@ -125,11 +158,7 @@ function Feed({ session, onOpenChats, onViewProfile }) {
     })
 
     if (!error) {
-      setNewContent('')
-      setNewType('general')
-      setImageFile(null)
-      setImagePreview(null)
-      setShowComposer(false)
+      closeComposer()
       fetchPosts()
     }
     setPosting(false)
@@ -186,7 +215,9 @@ function Feed({ session, onOpenChats, onViewProfile }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative', overflow: 'hidden' }}>
+
+      {/* Header — no leftover unloaded icon, just logo + inbox + avatar */}
       <div style={{ padding: '18px 20px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -200,46 +231,16 @@ function Feed({ session, onOpenChats, onViewProfile }) {
             <button onClick={onOpenChats} style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'transparent', color: 'var(--text-strong)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <Icon name="inbox" size={20} />
             </button>
-            <button onClick={() => setShowComposer(v => !v)} style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--app-accent)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <Icon name={showComposer ? 'x' : 'plus'} size={18} />
-            </button>
+            <div onClick={onOpenOwnProfile} style={{ cursor: 'pointer' }}>
+              <Avatar url={myAvatar} name={session.user.email} size={36} />
+            </div>
           </div>
         </div>
       </div>
 
-      {showComposer && (
-        <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)' }}>
-          <textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="Share something with campus..." rows={3} style={{ width: '100%', padding: '12px', borderRadius: '14px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }} />
-          {imagePreview && (
-            <div style={{ position: 'relative', marginTop: '10px' }}>
-              <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '14px' }} />
-              <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                <Icon name="x" size={14} />
-              </div>
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '10px' }}>
-            {Object.entries(TYPE_STYLES).map(([key, value]) => (
-              <div key={key} onClick={() => setNewType(key)} style={{ padding: '7px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)', background: newType === key ? value.bg : 'var(--card-bg)', color: value.color }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <Icon name={value.icon} size={12} />
-                  {value.label}
-                </span>
-              </div>
-            ))}
-            <label style={{ marginLeft: 'auto', width: '34px', height: '34px', borderRadius: '10px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--app-accent)' }}>
-              <Icon name="camera" size={16} />
-              <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
-            </label>
-          </div>
-          <button onClick={handlePost} disabled={posting || uploading || (!newContent.trim() && !imageFile)} style={{ width: '100%', marginTop: '12px', padding: '12px', borderRadius: '14px', border: 'none', background: (newContent.trim() || imageFile) ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: (newContent.trim() || imageFile) ? 'pointer' : 'default' }}>
-            {uploading ? 'Processing...' : posting ? 'Posting...' : 'Post to Feed'}
-          </button>
-        </div>
-      )}
-
+      {/* Posts */}
       {loading ? <FeedSkeleton /> : (
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
         {posts.map(post => {
           const type = TYPE_STYLES[post.post_type] || TYPE_STYLES.general
           const name = post.profiles?.full_name || 'PolyNet Student'
@@ -326,6 +327,238 @@ function Feed({ session, onOpenChats, onViewProfile }) {
         })}
       </div>
       )}
+
+      {/* Floating Action Button — purple circle, plus icon */}
+      <div
+        onClick={openComposer}
+        style={{
+          position: 'fixed',
+          right: '16px',
+          bottom: '86px',
+          width: '54px', height: '54px', borderRadius: '50%',
+          background: 'var(--app-accent)', color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 6px 20px rgba(124,58,237,0.45)',
+          cursor: 'pointer', zIndex: 90,
+        }}
+      >
+        <Icon name="plus" size={26} />
+      </div>
+
+      {/* Dark overlay behind slide-in panel */}
+      {composerOpen && (
+        <div
+          onClick={closeComposer}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+            zIndex: 150, animation: 'fadeIn 0.25s ease',
+          }}
+        />
+      )}
+
+      {/* Slide-in composer panel — from left */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0, bottom: 0, left: 0,
+          width: '86%',
+          maxWidth: '360px',
+          background: 'var(--card-bg)',
+          zIndex: 160,
+          transform: composerOpen ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
+          boxShadow: '8px 0 40px rgba(0,0,0,0.2)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* Panel header */}
+        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {composerStep !== 'choose' && (
+            <div onClick={() => setComposerStep('choose')} style={{ cursor: 'pointer', color: 'var(--text-strong)' }}>
+              <Icon name="arrowLeft" size={20} />
+            </div>
+          )}
+          <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
+            {composerStep === 'choose' ? 'New Post' : composerStep === 'photo' ? 'Add Photo' : 'Write Something'}
+          </h2>
+          <div onClick={closeComposer} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+            <Icon name="x" size={20} />
+          </div>
+        </div>
+
+        {/* Step: choose */}
+        {composerStep === 'choose' && (
+          <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div
+              onClick={() => setComposerStep('photo')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
+                borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
+                cursor: 'pointer', background: 'var(--page-bg)',
+              }}
+            >
+              <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="camera" size={20} color="var(--app-accent)" />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Photo</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Share a picture with campus</div>
+              </div>
+            </div>
+
+            <div
+              onClick={() => setComposerStep('text')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
+                borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
+                cursor: 'pointer', background: 'var(--page-bg)',
+              }}
+            >
+              <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="message-circle" size={20} color="var(--app-accent)" />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Text</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Write an update or announcement</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step: photo */}
+        {composerStep === 'photo' && (
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+            {!imagePreview ? (
+              <label style={{
+                flex: 1, minHeight: '220px', borderRadius: '16px',
+                border: '2px dashed var(--app-border-soft)', display: 'flex',
+                flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: '10px', cursor: 'pointer', color: 'var(--text-muted)',
+              }}>
+                <Icon name="imagePlus" size={32} color="var(--app-accent)" />
+                <span style={{ fontSize: '13.5px', fontWeight: 600 }}>{uploading ? 'Processing...' : 'Tap to select a photo'}</span>
+                <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+              </label>
+            ) : (
+              <>
+                <div style={{ position: 'relative' }}>
+                  <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '280px', objectFit: 'cover', borderRadius: '16px' }} />
+                  <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{
+                    position: 'absolute', top: '8px', right: '8px', width: '30px', height: '30px',
+                    borderRadius: '50%', background: 'rgba(0,0,0,0.65)', color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  }}>
+                    <Icon name="x" size={15} />
+                  </div>
+                </div>
+
+                {!showCaptionField ? (
+                  <div
+                    onClick={() => setShowCaptionField(true)}
+                    style={{
+                      marginTop: '14px', padding: '12px', borderRadius: '12px',
+                      border: '1.5px dashed var(--app-border-soft)', textAlign: 'center',
+                      color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+                    }}
+                  >
+                    + Add Caption
+                  </div>
+                ) : (
+                  <textarea
+                    value={newContent}
+                    onChange={e => setNewContent(e.target.value)}
+                    placeholder="Write a caption..."
+                    rows={2}
+                    autoFocus
+                    style={{
+                      width: '100%', marginTop: '14px', padding: '12px', borderRadius: '12px',
+                      border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                      color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
+                      outline: 'none', fontFamily: 'inherit', fontSize: '13.5px',
+                    }}
+                  />
+                )}
+
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
+                  {Object.entries(TYPE_STYLES).map(([key, value]) => (
+                    <div key={key} onClick={() => setNewType(key)} style={{
+                      padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
+                      cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
+                      background: newType === key ? value.bg : 'transparent', color: value.color,
+                    }}>
+                      {value.label}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={handlePost}
+                  disabled={posting || uploading}
+                  style={{
+                    width: '100%', marginTop: 'auto', padding: '14px', borderRadius: '14px',
+                    border: 'none', background: 'var(--app-accent)', color: '#fff',
+                    fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', marginBottom: '4px',
+                  }}
+                >
+                  {posting ? 'Posting...' : 'Post'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Step: text */}
+        {composerStep === 'text' && (
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+            <textarea
+              value={newContent}
+              onChange={e => setNewContent(e.target.value)}
+              placeholder="Share something with campus..."
+              rows={6}
+              autoFocus
+              style={{
+                width: '100%', padding: '14px', borderRadius: '14px',
+                border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
+                outline: 'none', fontFamily: 'inherit', fontSize: '14.5px',
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
+              {Object.entries(TYPE_STYLES).map(([key, value]) => (
+                <div key={key} onClick={() => setNewType(key)} style={{
+                  padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
+                  cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
+                  background: newType === key ? value.bg : 'transparent', color: value.color,
+                }}>
+                  {value.label}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={handlePost}
+              disabled={posting || !newContent.trim()}
+              style={{
+                width: '100%', marginTop: 'auto', padding: '14px', borderRadius: '14px',
+                border: 'none', background: newContent.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
+                color: '#fff', fontWeight: 700, fontSize: '14.5px',
+                cursor: newContent.trim() ? 'pointer' : 'default', marginBottom: '4px',
+              }}
+            >
+              {posting ? 'Posting...' : 'Post'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
     </div>
   )
 }

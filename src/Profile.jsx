@@ -151,7 +151,7 @@ function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onCancel }
 function Profile({ session }) {
   const { isDark, toggleTheme } = useTheme()
   const [editMode, setEditMode] = useState(false)
-
+const [allPlatformSkills, setAllPlatformSkills] = useState([])
   const [fullName, setFullName] = useState('')
   const [department, setDepartment] = useState('')
   const [deptSearch, setDeptSearch] = useState('')
@@ -185,7 +185,7 @@ function Profile({ session }) {
   }, [])
 
   async function fetchProfile() {
-    const [{ data }, { data: skillData }] = await Promise.all([
+    const [{ data }, { data: skillData }, { data: platformSkills }] = await Promise.all([
       supabase
         .from('profiles')
         .select('full_name, department, year_of_study, bio, avatar_url, whatsapp_number, social_links')
@@ -195,6 +195,9 @@ function Profile({ session }) {
         .from('skills')
         .select('id, skill_name')
         .eq('user_id', session.user.id),
+      supabase
+        .from('skills')
+        .select('skill_name'),
     ])
 
     if (data) {
@@ -208,8 +211,15 @@ function Profile({ session }) {
     }
 
     setSkills(skillData || [])
+
+    if (platformSkills) {
+      const unique = [...new Set(platformSkills.map(s => s.skill_name))].sort()
+      setAllPlatformSkills(unique)
+    }
+
     setLoading(false)
   }
+
 
   async function handleAvatarSelect(e) {
     const file = e.target.files[0]
@@ -317,7 +327,7 @@ function Profile({ session }) {
   }
 
   const filteredDepts = DEPARTMENTS.filter(d => d.toLowerCase().includes(deptSearch.toLowerCase()))
-  const filteredSkills = SUGGESTED_SKILLS.filter(s =>
+  const filteredSkills = allPlatformSkills.filter(s =>
     s.toLowerCase().includes(skillSearch.toLowerCase()) &&
     !skills.find(ms => ms.skill_name.toLowerCase() === s.toLowerCase())
   )
@@ -521,17 +531,22 @@ function Profile({ session }) {
                   style={compactInput}
                 />
                 {showSkillList && skillSearch.length > 0 && (
-                  <div style={dropdownStyle}>
-                    {!SUGGESTED_SKILLS.find(s => s.toLowerCase() === skillSearch.toLowerCase()) && (
-                      <div onMouseDown={() => addSkill(skillSearch)} style={{ ...dropdownItem, color: 'var(--app-accent)', fontWeight: 700 }}>
-                        + Add "{skillSearch}"
-                      </div>
-                    )}
-                    {filteredSkills.slice(0, 8).map(s => (
-                      <div key={s} onMouseDown={() => addSkill(s)} style={dropdownItem}>{s}</div>
-                    ))}
-                  </div>
-                )}
+                <div style={dropdownStyle}>
+                  {!allPlatformSkills.find(s => s.toLowerCase() === skillSearch.toLowerCase()) && (
+                    <div onMouseDown={() => addSkill(skillSearch)} style={{ ...dropdownItem, color: 'var(--app-accent)', fontWeight: 700 }}>
+                      + Add "{skillSearch}" as a new skill
+                    </div>
+                  )}
+                  {filteredSkills.length === 0 && skillSearch.length > 0 && (
+                    <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                      No matches yet — be the first to add this skill!
+                    </div>
+                  )}
+                  {filteredSkills.slice(0, 8).map(s => (
+                    <div key={s} onMouseDown={() => addSkill(s)} style={dropdownItem}>{s}</div>
+                  ))}
+                </div>
+              )}
               </div>
             </div>
 
