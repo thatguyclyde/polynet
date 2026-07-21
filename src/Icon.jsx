@@ -4,8 +4,8 @@ import {
   Share2, Bookmark, Bell, Settings, LogOut, Trash2, Send, ImagePlus,
   MapPin, Calendar, ShoppingBag, Newspaper, Zap, Star, Flag,
   Globe, MessageSquare, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,
-  MoreHorizontal, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
-  Filter, SlidersHorizontal, Store, UserCircle // Added Store and UserCircle here
+  MoreHorizontal, MoreVertical, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
+  Filter, SlidersHorizontal, Store, UserCircle, Download // Added Store and UserCircle here
 } from 'lucide-react'
 
 // Custom brand icons — Lucide no longer ships these, so we draw them ourselves
@@ -111,11 +111,14 @@ const ICONS = {
   heart: Heart,
   comment: MessageCircle,
   share: Share2,
+  'share-2': Share2,
   bookmark: Bookmark,
+  download: Download,
   bell: Bell,
   settings: Settings,
   logout: LogOut,
   trash: Trash2,
+  'trash-2': Trash2,
   send: Send,
   imagePlus: ImagePlus,
   mapPin: MapPin,
@@ -135,6 +138,7 @@ const ICONS = {
   eyeOff: EyeOff,
   thumbsUp: ThumbsUp,
   more: MoreHorizontal,
+  'ellipsis-vertical': MoreVertical,
   trendingUp: TrendingUp,
   filter: Filter,
   sliders: SlidersHorizontal,

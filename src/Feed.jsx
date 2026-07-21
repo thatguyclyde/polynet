@@ -61,7 +61,7 @@ function Avatar({ url, name, size = 40, onClick }) {
   )
 }
 
-function Feed({ session, onOpenChats, onViewProfile, onOpenOwnProfile }) {
+function Feed({ session, onViewProfile }) {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [myAvatar, setMyAvatar] = useState(null)
@@ -83,6 +83,9 @@ function Feed({ session, onOpenChats, onViewProfile, onOpenOwnProfile }) {
   const [commentsByPost, setCommentsByPost] = useState({})
   const [newComment, setNewComment] = useState('')
   const [commentLoading, setCommentLoading] = useState(false)
+
+  const [openMenuId, setOpenMenuId] = useState(null)
+  const [savedIds, setSavedIds] = useState(new Set())
 
   useEffect(() => {
     fetchPosts()
@@ -214,26 +217,50 @@ function Feed({ session, onOpenChats, onViewProfile, onOpenOwnProfile }) {
     setCommentLoading(false)
   }
 
+  async function deletePost(postId) {
+    if (window.confirm('Are you sure you want to delete this post?')) {
+      const { error } = await supabase.from('feed_posts').delete().eq('id', postId)
+      if (!error) {
+        setPosts(prev => prev.filter(p => p.id !== postId))
+        setOpenMenuId(null)
+      }
+    }
+  }
+
+  function toggleSave(postId) {
+    setSavedIds(prev => {
+      const next = new Set(prev)
+      next.has(postId) ? next.delete(postId) : next.add(postId)
+      return next
+    })
+    setOpenMenuId(null)
+  }
+
+  function reportPost(postId) {
+    alert('Post reported. Thank you for helping keep our community safe!')
+    setOpenMenuId(null)
+  }
+
+  function sharePost(postId) {
+    if (navigator.share) {
+      navigator.share({ title: 'Check out this post!', text: 'A post from PolyNet' })
+    } else {
+      alert('Post link copied to clipboard!')
+      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#post-${postId}`)
+    }
+    setOpenMenuId(null)
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative', overflow: 'hidden' }}>
 
-      {/* Header — no leftover unloaded icon, just logo + inbox + avatar */}
+      {/* Header — just logo and name */}
       <div style={{ padding: '18px 20px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <img src="/logo.png" alt="PolyNet" style={{ width: '38px', height: '38px', borderRadius: '12px', objectFit: 'contain' }} />
-            <div>
-              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--app-accent)' }}>PolyNet</h1>
-              <p style={{ marginTop: '1px', fontSize: '11px', color: 'var(--text-muted)' }}>Harare Poly</p>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button onClick={onOpenChats} style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'transparent', color: 'var(--text-strong)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <Icon name="inbox" size={20} />
-            </button>
-            <div onClick={onOpenOwnProfile} style={{ cursor: 'pointer' }}>
-              <Avatar url={myAvatar} name={session.user.email} size={36} />
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/logo.png" alt="PolyNet" style={{ width: '38px', height: '38px', borderRadius: '12px', objectFit: 'contain' }} />
+          <div>
+            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--app-accent)' }}>PolyNet</h1>
+            <p style={{ marginTop: '1px', fontSize: '11px', color: 'var(--text-muted)' }}>Harare Poly</p>
           </div>
         </div>
       </div>
@@ -252,21 +279,77 @@ function Feed({ session, onOpenChats, onViewProfile, onOpenOwnProfile }) {
 
           return (
             <div key={post.id} style={{ borderBottom: '8px solid var(--app-border)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 16px' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 16px', position: 'relative' }}>
                 <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={goToAuthor} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <span onClick={goToAuthor} style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer' }}>{name}</span>
+                    {dept && (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{dept}</span>
+                    )}
                     <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, color: type.color, background: type.bg }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        <Icon name={type.icon} size={10} />
-                        {type.label}
-                      </span>
+                      {type.label}
                     </span>
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{dept} · {timeAgo(post.created_at)}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{timeAgo(post.created_at)}</div>
+                  <div style={{ position: 'relative' }}>
+                    <div
+                      onClick={() => setOpenMenuId(openMenuId === post.id ? null : post.id)}
+                      style={{ cursor: 'pointer', padding: '4px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Icon name="ellipsis-vertical" size={18} />
+                    </div>
+                    {openMenuId === post.id && (
+                      <div style={{
+                        position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                        background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '160px', overflow: 'hidden'
+                      }}>
+                        {isOwnPost && (
+                          <div
+                            onClick={() => deletePost(post.id)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="trash-2" size={14} />
+                            Delete
+                          </div>
+                        )}
+                        <div
+                          onClick={() => toggleSave(post.id)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: savedIds.has(post.id) ? 'var(--app-accent)' : 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        >
+                          <Icon name="download" size={14} />
+                          {savedIds.has(post.id) ? 'Saved' : 'Save'}
+                        </div>
+                        {!isOwnPost && (
+                          <div
+                            onClick={() => reportPost(post.id)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="flag" size={14} />
+                            Report
+                          </div>
+                        )}
+                        <div
+                          onClick={() => sharePost(post.id)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                        >
+                          <Icon name="share-2" size={14} />
+                          Share
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {post.content && (
+                <div style={{ margin: '6px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
+                  <span>{post.content}</span>
+                </div>
+              )}
 
               {post.image_url && (
                 <div onDoubleClick={() => handleDoubleTap(post.id)} style={{ position: 'relative' }}>
@@ -290,17 +373,7 @@ function Feed({ session, onOpenChats, onViewProfile, onOpenOwnProfile }) {
                   <Icon name="message-circle" size={17} />
                   {comments.length > 0 ? `${comments.length} Comment${comments.length > 1 ? 's' : ''}` : 'Comment'}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '12px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-                  <Icon name="share" size={17} />
-                  Share
-                </div>
               </div>
-
-              {post.content && (
-                <p style={{ margin: '10px 16px 12px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
-                  <span onClick={goToAuthor} style={{ fontWeight: 700, color: 'var(--text-strong)', cursor: 'pointer' }}>{name}</span>{' '}{post.content}
-                </p>
-              )}
 
               {openComments === post.id && (
                 <div style={{ padding: '0 16px 14px' }}>

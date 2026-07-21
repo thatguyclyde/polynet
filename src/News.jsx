@@ -103,19 +103,12 @@ function News({ session }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div style={{ padding: '18px 20px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <img src="/logo.png" alt="PolyNet" style={{ width: '38px', height: '38px', borderRadius: '12px', objectFit: 'contain' }} />
-            <div>
-              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--app-accent)' }}>News</h1>
-              <p style={{ marginTop: '1px', fontSize: '11px', color: 'var(--text-muted)' }}>Campus updates</p>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/logo.png" alt="PolyNet" style={{ width: '38px', height: '38px', borderRadius: '12px', objectFit: 'contain' }} />
+          <div>
+            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--app-accent)' }}>News</h1>
+            <p style={{ marginTop: '1px', fontSize: '11px', color: 'var(--text-muted)' }}>Campus updates</p>
           </div>
-          {isAdmin && (
-            <button onClick={() => setShowComposer(v => !v)} style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--app-accent)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <Icon name={showComposer ? 'x' : 'plus'} size={18} />
-            </button>
-          )}
         </div>
       </div>
 
@@ -138,6 +131,25 @@ function News({ session }) {
           <button onClick={handlePost} disabled={posting || uploading || !title.trim()} style={{ width: '100%', marginTop: '12px', padding: '12px', borderRadius: '14px', border: 'none', background: title.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: title.trim() ? 'pointer' : 'default' }}>
             {uploading ? 'Processing...' : posting ? 'Publishing...' : 'Publish Article'}
           </button>
+        </div>
+      )}
+
+      {/* Floating Action Button — purple circle, plus icon */}
+      {isAdmin && (
+        <div
+          onClick={() => setShowComposer(v => !v)}
+          style={{
+            position: 'fixed',
+            right: '16px',
+            bottom: '86px',
+            width: '54px', height: '54px', borderRadius: '50%',
+            background: 'var(--app-accent)', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 6px 20px rgba(124,58,237,0.45)',
+            cursor: 'pointer', zIndex: 90,
+          }}
+        >
+          <Icon name="plus" size={26} />
         </div>
       )}
 
