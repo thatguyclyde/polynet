@@ -28,26 +28,36 @@ async function findOrCreateConversation(session, pendingChat) {
   const { listingId, sellerId, listingTitle, sellerName } = pendingChat
 
   if (sellerId === session.user.id) {
-    return null
+    return { selfChat: true }
   }
 
-  const { data: existing } = await supabase
+  const { data: existing, error: fetchErr } = await supabase
     .from('conversations')
     .select('id, listing_id, buyer_id, seller_id, last_message_at')
     .eq('listing_id', listingId)
     .eq('buyer_id', session.user.id)
     .maybeSingle()
 
+  if (fetchErr) {
+    console.error('Error checking for existing conversation:', fetchErr.message)
+    return { error: true }
+  }
+
   let conversation = existing
   if (!conversation) {
-    const { data: created } = await supabase
+    const { data: created, error: insertErr } = await supabase
       .from('conversations')
       .insert({ listing_id: listingId, buyer_id: session.user.id, seller_id: sellerId })
       .select('id, listing_id, buyer_id, seller_id, last_message_at')
       .single()
+
+    if (insertErr) {
+      console.error('Error creating conversation:', insertErr.message)
+      return { error: true }
+    }
     conversation = created
   }
-  if (!conversation) return null
+  if (!conversation) return { error: true }
 
   return {
     id: conversation.id,
@@ -66,7 +76,7 @@ function Inbox({ session, onOpenThread, onBack }) {
 
   async function fetchConversations() {
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('conversations')
       .select(`
         id, listing_id, buyer_id, seller_id, last_message, last_message_at, created_at,
@@ -76,6 +86,7 @@ function Inbox({ session, onOpenThread, onBack }) {
       `)
       .or(`buyer_id.eq.${session.user.id},seller_id.eq.${session.user.id}`)
       .order('last_message_at', { ascending: false })
+    if (error) console.error('Error fetching conversations:', error.message)
     setConversations(data || [])
     setLoading(false)
   }
@@ -94,7 +105,7 @@ function Inbox({ session, onOpenThread, onBack }) {
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div style={{ padding: '18px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
         <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
-          <Icon name="chevron-left" size={20} />
+          <Icon name="chevronLeft" size={20} />
         </div>
         <span style={{ fontWeight: 700, fontSize: '17px', color: 'var(--text-strong)' }}>Chats</span>
       </div>
@@ -163,11 +174,12 @@ function ChatThread({ session, conversation, onBack }) {
 
   async function fetchMessages(showLoading) {
     if (showLoading) setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('chat_messages')
       .select('id, sender_id, content, created_at')
       .eq('conversation_id', conversation.id)
       .order('created_at', { ascending: true })
+    if (error) console.error('Error fetching messages:', error.message)
     setMessages(data || [])
     if (showLoading) setLoading(false)
   }
@@ -188,6 +200,9 @@ function ChatThread({ session, conversation, onBack }) {
         last_message_at: new Date().toISOString(),
       }).eq('id', conversation.id)
       fetchMessages(false)
+    } else {
+      console.error('Error sending message:', error.message)
+      setText(content) // restore text so the user doesn't lose what they typed
     }
     setSending(false)
   }
@@ -196,7 +211,7 @@ function ChatThread({ session, conversation, onBack }) {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
         <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
-          <Icon name="chevron-left" size={20} />
+          <Icon name="chevronLeft" size={20} />
         </div>
         <InitialsAvatar name={conversation.otherName} size={36} />
         <div style={{ textAlign: 'left' }}>
@@ -261,9 +276,17 @@ function Chats({ session, pendingChat, onClearPending, onBack }) {
     if (!pendingChat) return
     let cancelled = false
     setResolving(true)
-    findOrCreateConversation(session, pendingChat).then(convo => {
+    findOrCreateConversation(session, pendingChat).then(result => {
       if (cancelled) return
-      if (convo) setOpenConversation(convo)
+
+      if (result?.selfChat) {
+        alert("That's your own listing — you can't message yourself!")
+      } else if (result?.error) {
+        alert('Could not open this chat. Please try again.')
+      } else if (result) {
+        setOpenConversation(result)
+      }
+
       onClearPending()
       setResolving(false)
     })

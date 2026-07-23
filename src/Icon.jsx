@@ -5,7 +5,7 @@ import {
   MapPin, Calendar, ShoppingBag, Newspaper, Zap, Star, Flag,
   Globe, MessageSquare, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,
   MoreHorizontal, MoreVertical, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
-  Filter, SlidersHorizontal, Store, UserCircle, Download // Added Store and UserCircle here
+  Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox
 } from 'lucide-react'
 
 // Custom brand icons — Lucide no longer ships these, so we draw them ourselves
@@ -106,10 +106,11 @@ const ICONS = {
   search: Search,
   home: Home,
   user: User,
-  userCircle: UserCircle, // Added UserCircle mapping
+  userCircle: UserCircle,
   users: Users,
   heart: Heart,
   comment: MessageCircle,
+  'message-circle': MessageCircle, // alias — some components call it this way
   share: Share2,
   'share-2': Share2,
   bookmark: Bookmark,
@@ -124,7 +125,7 @@ const ICONS = {
   mapPin: MapPin,
   calendar: Calendar,
   shoppingBag: ShoppingBag,
-  store: Store,           // Added Store mapping
+  store: Store,
   news: Newspaper,
   zap: Zap,
   star: Star,
@@ -142,6 +143,7 @@ const ICONS = {
   trendingUp: TrendingUp,
   filter: Filter,
   sliders: SlidersHorizontal,
+  inbox: Inbox,
   tiktok: TikTokIcon,
   whatsapp: WhatsAppIcon,
   snapchat: SnapchatIcon,
@@ -153,19 +155,19 @@ const ICONS = {
   github: GithubIcon,
 }
 
-function Icon({ name, size = 18, color = 'currentColor', strokeWidth }) {
+function Icon({ name, size = 18, color = 'currentColor', strokeWidth, style, fill }) {
   const IconComponent = ICONS[name]
 
   if (!IconComponent) {
     console.warn(`Icon "${name}" not found in Icon.jsx map`)
-    return <div style={{ width: size, height: size, background: '#E2E0FF', borderRadius: '4px' }} />
+    return <div style={{ width: size, height: size, background: '#E2E0FF', borderRadius: '4px', ...style }} />
   }
 
   if (CUSTOM_ICONS.includes(name)) {
-    return <IconComponent size={size} color={color} />
+    return <IconComponent size={size} color={color} style={style} />
   }
 
-  return <IconComponent size={size} color={color} strokeWidth={strokeWidth || 2} />
+  return <IconComponent size={size} color={color} strokeWidth={strokeWidth || 2} style={style} fill={fill} />
 }
 
 export default Icon

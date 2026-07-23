@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 
@@ -134,11 +135,30 @@ function PolyMart({ session, onMessageSeller }) {
     if (error) {
       setErrorMsg(`Failed to list item: ${error.message}`)
     } else {
-      setTitle(''); setPrice(''); setDescription(''); setCategory('electronics')
-      setImageFile(null); setImagePreview(null); setShowComposer(false)
+      closeComposer()
       fetchListings()
     }
     setPosting(false)
+  }
+
+  function openComposer() {
+    setErrorMsg('')
+    setShowComposer(true)
+  }
+
+  function closeComposer() {
+    setShowComposer(false)
+    // fields reset once the exit animation finishes (see onExitComplete below)
+  }
+
+  function resetComposerFields() {
+    setTitle('')
+    setPrice('')
+    setDescription('')
+    setCategory('electronics')
+    setImageFile(null)
+    setImagePreview(null)
+    setErrorMsg('')
   }
 
   const filtered = listings.filter(l => {
@@ -171,7 +191,9 @@ function PolyMart({ session, onMessageSeller }) {
           padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
           display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10,
         }}>
-          <div onClick={() => setSelectedListing(null)} style={{ cursor: 'pointer', fontSize: '20px', color: 'var(--text-strong)' }}>←</div>
+          <div onClick={() => setSelectedListing(null)} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
+            <Icon name="arrowLeft" size={20} />
+          </div>
           <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-strong)' }}>Listing details</span>
         </div>
 
@@ -277,111 +299,7 @@ function PolyMart({ session, onMessageSeller }) {
 
       {/* Floating Action Button — purple circle, plus icon */}
       <div
-        onClick={() => setShowComposer(!showComposer)}
-        style={{
-          position: 'fixed',
-          right: '16px',
-          bottom: '86px',
-          width: '54px', height: '54px', borderRadius: '50%',
-          background: 'var(--app-accent)', color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: 'var(--shadow-accent)',
-          cursor: 'pointer', zIndex: 90,
-        }}
-      >
-        <Icon name="plus" size={26} />
-      </div>
-
-      {showComposer && (
-        <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)' }}>
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="What are you selling?"
-            style={composerInput}
-          />
-          <input
-            value={price}
-            onChange={e => setPrice(e.target.value.replace(/[^0-9.]/g, ''))}
-            placeholder="Price ($)"
-            style={composerInput}
-          />
-          <textarea
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder="Describe the item..."
-            rows={3}
-            style={{ ...composerInput, resize: 'none', fontFamily: 'inherit' }}
-          />
-
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-            {CATEGORIES.filter(c => c.id !== 'all').map(cat => (
-              <div
-                key={cat.id}
-                onClick={() => setCategory(cat.id)}
-                style={{
-                  padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                  cursor: 'pointer',
-                  background: category === cat.id ? 'var(--app-accent)' : 'var(--app-accent-soft)',
-                  color: category === cat.id ? '#fff' : 'var(--app-accent)',
-                }}
-              >
-                {cat.emoji} {cat.label}
-              </div>
-            ))}
-          </div>
-
-          {imagePreview && (
-            <div style={{ position: 'relative', marginBottom: '10px' }}>
-              <img src={imagePreview} alt="preview" style={{
-                width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '12px',
-              }} />
-              <div
-                onClick={() => { setImageFile(null); setImagePreview(null) }}
-                style={{
-                  position: 'absolute', top: '8px', right: '8px',
-                  width: '26px', height: '26px', borderRadius: '50%',
-                  background: 'rgba(0,0,0,0.6)', color: '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', fontSize: '14px',
-                }}
-              >×</div>
-            </div>
-          )}
-
-          <label style={{
-            display: 'inline-flex', width: '32px', height: '32px', borderRadius: '10px',
-            background: 'var(--app-accent-soft)', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', fontSize: '16px', marginBottom: '12px',
-          }}>
-            📷
-            <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
-          </label>
-
-          {errorMsg && (
-            <p style={{ color: 'var(--danger)', fontSize: '12.5px', marginBottom: '10px', fontWeight: 600 }}>
-              {errorMsg}
-            </p>
-          )}
-
-          <button
-            onClick={handlePost}
-            disabled={posting || uploading || !title.trim() || !price}
-            style={{
-              width: '100%', padding: '12px', borderRadius: '12px', border: 'none',
-              background: (title.trim() && price) ? 'var(--app-accent)' : 'var(--app-border-soft)',
-              color: '#fff', fontWeight: 700, fontSize: '14px',
-              cursor: (title.trim() && price) ? 'pointer' : 'default',
-            }}
-          >
-            {uploading ? 'Processing image...' : posting ? 'Listing...' : 'List Item'}
-          </button>
-        </div>
-      )}
-
-      {/* Floating Action Button — purple circle, plus icon */}
-      <div
-        onClick={() => setShowComposer(!showComposer)}
+        onClick={openComposer}
         style={{
           position: 'fixed',
           right: '16px',
@@ -395,6 +313,150 @@ function PolyMart({ session, onMessageSeller }) {
       >
         <Icon name="plus" size={26} />
       </div>
+
+      {/* Composer — centered card covering only the middle of the screen.
+          Backdrop fades at one pace; the card springs in from the left at a
+          distinctly different, bouncier pace. Same pattern as Feed and News. */}
+      <AnimatePresence onExitComplete={resetComposerFields}>
+        {showComposer && (
+          <>
+            <motion.div
+              key="polymart-composer-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.28 }}
+              onClick={closeComposer}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 150 }}
+            />
+
+            <div
+              style={{
+                position: 'fixed', inset: 0, zIndex: 160,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '40px 24px',
+                pointerEvents: 'none', // taps outside the card fall through to the backdrop
+              }}
+            >
+              <motion.div
+                key="polymart-composer-panel"
+                initial={{ x: '-55%', opacity: 0, scale: 0.94 }}
+                animate={{ x: 0, opacity: 1, scale: 1 }}
+                exit={{ x: '-55%', opacity: 0, scale: 0.94 }}
+                transition={{ type: 'spring', stiffness: 230, damping: 26, mass: 0.9 }}
+                style={{
+                  width: '100%',
+                  maxWidth: '360px',
+                  maxHeight: '80vh',
+                  background: 'var(--card-bg)',
+                  borderRadius: '26px',
+                  boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  pointerEvents: 'auto',
+                }}
+              >
+                {/* Panel header */}
+                <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
+                    List an Item
+                  </h2>
+                  <div onClick={closeComposer} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+                    <Icon name="x" size={20} />
+                  </div>
+                </div>
+
+                <div style={{ overflowY: 'auto', flex: 1, padding: '20px' }}>
+                  <input
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    placeholder="What are you selling?"
+                    style={composerInput}
+                  />
+                  <input
+                    value={price}
+                    onChange={e => setPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="Price ($)"
+                    style={composerInput}
+                  />
+                  <textarea
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    placeholder="Describe the item..."
+                    rows={3}
+                    style={{ ...composerInput, resize: 'none', fontFamily: 'inherit' }}
+                  />
+
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    {CATEGORIES.filter(c => c.id !== 'all').map(cat => (
+                      <div
+                        key={cat.id}
+                        onClick={() => setCategory(cat.id)}
+                        style={{
+                          padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                          cursor: 'pointer',
+                          background: category === cat.id ? 'var(--app-accent)' : 'var(--app-accent-soft)',
+                          color: category === cat.id ? '#fff' : 'var(--app-accent)',
+                        }}
+                      >
+                        {cat.emoji} {cat.label}
+                      </div>
+                    ))}
+                  </div>
+
+                  {imagePreview && (
+                    <div style={{ position: 'relative', marginBottom: '10px' }}>
+                      <img src={imagePreview} alt="preview" style={{
+                        width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '12px',
+                      }} />
+                      <div
+                        onClick={() => { setImageFile(null); setImagePreview(null) }}
+                        style={{
+                          position: 'absolute', top: '8px', right: '8px',
+                          width: '26px', height: '26px', borderRadius: '50%',
+                          background: 'rgba(0,0,0,0.6)', color: '#fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', fontSize: '14px',
+                        }}
+                      >×</div>
+                    </div>
+                  )}
+
+                  <label style={{
+                    display: 'inline-flex', width: '32px', height: '32px', borderRadius: '10px',
+                    background: 'var(--app-accent-soft)', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', fontSize: '16px', marginBottom: '12px',
+                  }}>
+                    📷
+                    <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+                  </label>
+
+                  {errorMsg && (
+                    <p style={{ color: 'var(--danger)', fontSize: '12.5px', marginBottom: '10px', fontWeight: 600 }}>
+                      {errorMsg}
+                    </p>
+                  )}
+
+                  <button
+                    onClick={handlePost}
+                    disabled={posting || uploading || !title.trim() || !price}
+                    style={{
+                      width: '100%', padding: '13px', borderRadius: '14px', border: 'none',
+                      background: (title.trim() && price) ? 'var(--app-accent)' : 'var(--app-border-soft)',
+                      color: '#fff', fontWeight: 700, fontSize: '14.5px',
+                      cursor: (title.trim() && price) ? 'pointer' : 'default',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {uploading ? 'Processing image...' : posting ? 'Listing...' : 'List Item'}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
 
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '80px 30px' }}>

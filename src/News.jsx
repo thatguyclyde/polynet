@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { NewsSkeleton } from './Skeleton'
@@ -90,14 +91,26 @@ function News({ session }) {
     const { error } = await supabase.from('news_articles').insert({ author_id: session.user.id, title, body, image_url: imageUrl })
 
     if (!error) {
-      setTitle('')
-      setBody('')
-      setImageFile(null)
-      setImagePreview(null)
-      setShowComposer(false)
+      closeComposer()
       fetchArticles()
     }
     setPosting(false)
+  }
+
+  function openComposer() {
+    setShowComposer(true)
+  }
+
+  function closeComposer() {
+    setShowComposer(false)
+    // fields reset once the exit animation finishes (see onExitComplete below)
+  }
+
+  function resetComposerFields() {
+    setTitle('')
+    setBody('')
+    setImageFile(null)
+    setImagePreview(null)
   }
 
   return (
@@ -112,32 +125,10 @@ function News({ session }) {
         </div>
       </div>
 
-      {showComposer && (
-        <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)' }}>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Headline..." style={{ width: '100%', padding: '12px', borderRadius: '14px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }} />
-          <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Write the announcement..." rows={4} style={{ width: '100%', padding: '12px', borderRadius: '14px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', resize: 'none', boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit', marginBottom: '10px' }} />
-          {imagePreview && (
-            <div style={{ position: 'relative', marginBottom: '10px' }}>
-              <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '14px' }} />
-              <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                <Icon name="x" size={14} />
-              </div>
-            </div>
-          )}
-          <label style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--app-accent-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--app-accent)' }}>
-            <Icon name="camera" size={16} />
-            <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
-          </label>
-          <button onClick={handlePost} disabled={posting || uploading || !title.trim()} style={{ width: '100%', marginTop: '12px', padding: '12px', borderRadius: '14px', border: 'none', background: title.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: title.trim() ? 'pointer' : 'default' }}>
-            {uploading ? 'Processing...' : posting ? 'Publishing...' : 'Publish Article'}
-          </button>
-        </div>
-      )}
-
       {/* Floating Action Button — purple circle, plus icon */}
       {isAdmin && (
         <div
-          onClick={() => setShowComposer(v => !v)}
+          onClick={openComposer}
           style={{
             position: 'fixed',
             right: '16px',
@@ -152,6 +143,117 @@ function News({ session }) {
           <Icon name="plus" size={26} />
         </div>
       )}
+
+      {/* Composer — centered card covering only the middle of the screen.
+          Backdrop fades at one pace; the card springs in from the left at a
+          distinctly different, bouncier pace. Same pattern as Feed's composer. */}
+      <AnimatePresence onExitComplete={resetComposerFields}>
+        {showComposer && (
+          <>
+            <motion.div
+              key="news-composer-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.28 }}
+              onClick={closeComposer}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 150 }}
+            />
+
+            <div
+              style={{
+                position: 'fixed', inset: 0, zIndex: 160,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '40px 24px',
+                pointerEvents: 'none', // taps outside the card fall through to the backdrop
+              }}
+            >
+              <motion.div
+                key="news-composer-panel"
+                initial={{ x: '-55%', opacity: 0, scale: 0.94 }}
+                animate={{ x: 0, opacity: 1, scale: 1 }}
+                exit={{ x: '-55%', opacity: 0, scale: 0.94 }}
+                transition={{ type: 'spring', stiffness: 230, damping: 26, mass: 0.9 }}
+                style={{
+                  width: '100%',
+                  maxWidth: '360px',
+                  maxHeight: '76vh',
+                  background: 'var(--card-bg)',
+                  borderRadius: '26px',
+                  boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  pointerEvents: 'auto',
+                }}
+              >
+                {/* Panel header */}
+                <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
+                    New Article
+                  </h2>
+                  <div onClick={closeComposer} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+                    <Icon name="x" size={20} />
+                  </div>
+                </div>
+
+                <div style={{ overflowY: 'auto', flex: 1, padding: '20px' }}>
+                  <input
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    placeholder="Headline..."
+                    style={{
+                      width: '100%', padding: '12px', borderRadius: '14px',
+                      border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                      color: 'var(--text-strong)', boxSizing: 'border-box', outline: 'none',
+                      fontSize: '14px', marginBottom: '10px',
+                    }}
+                  />
+                  <textarea
+                    value={body}
+                    onChange={e => setBody(e.target.value)}
+                    placeholder="Write the announcement..."
+                    rows={4}
+                    style={{
+                      width: '100%', padding: '12px', borderRadius: '14px',
+                      border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                      color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
+                      outline: 'none', fontFamily: 'inherit', fontSize: '13.5px', marginBottom: '10px',
+                    }}
+                  />
+
+                  {imagePreview && (
+                    <div style={{ position: 'relative', marginBottom: '10px' }}>
+                      <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '14px' }} />
+                      <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Icon name="x" size={14} />
+                      </div>
+                    </div>
+                  )}
+
+                  <label style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--app-accent-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--app-accent)' }}>
+                    <Icon name="camera" size={16} />
+                    <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+                  </label>
+
+                  <button
+                    onClick={handlePost}
+                    disabled={posting || uploading || !title.trim()}
+                    style={{
+                      width: '100%', marginTop: '16px', padding: '13px', borderRadius: '14px',
+                      border: 'none', background: title.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
+                      color: '#fff', fontWeight: 700, fontSize: '14.5px',
+                      cursor: title.trim() ? 'pointer' : 'default', marginBottom: '4px',
+                    }}
+                  >
+                    {uploading ? 'Processing...' : posting ? 'Publishing...' : 'Publish Article'}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
 
       {loading ? <NewsSkeleton /> : (
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Newspaper, Store, UserCircle, X } from 'lucide-react'
+import { Home, Newspaper, Store, MessageCircle, UserCircle } from 'lucide-react'
 import { supabase } from './supabase'
 import SplashScreen from './SplashScreen'
 import SignUp from './SignUp'
@@ -9,18 +9,18 @@ import Feed from './Feed'
 import News from './News'
 import Polymart from './Polymart'
 import Profile from './Profile'
+import Chats from './Chats'
 
-// Only 3 tabs now — Profile moved to the global top-right icon.
-// Chats will become the 4th tab once Chats.jsx is built.
 const TABS = [
   { id: 'feed', icon: Home, label: 'Home' },
   { id: 'news', icon: Newspaper, label: 'News' },
   { id: 'polymart', icon: Store, label: 'Polymart' },
+  { id: 'chats', icon: MessageCircle, label: 'Chats' },
 ]
 
 function ComingSoonDots() {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--page-bg)' }}>
       <div style={{ display: 'flex', gap: '10px' }}>
         {[0, 1, 2].map((i) => (
           <div key={i} style={{
@@ -55,6 +55,8 @@ function App() {
   const [authView, setAuthView] = useState('login')
   const [showProfile, setShowProfile] = useState(false)
   const [myAvatar, setMyAvatar] = useState(null)
+
+  const [pendingChat, setPendingChat] = useState(null)
 
   useEffect(() => {
     const checkUserProfile = async (userSession) => {
@@ -127,9 +129,8 @@ function App() {
     setPage(targetId)
   }
 
-  // ── Sticky, finger-following drag using Framer Motion's native drag ──
   function handleDragEnd(event, info) {
-    const threshold = 90 // px of real drag distance required to commit
+    const threshold = 90
     const currentIndex = TABS.findIndex(t => t.id === page)
 
     if (info.offset.x < -threshold && currentIndex < TABS.length - 1) {
@@ -137,8 +138,11 @@ function App() {
     } else if (info.offset.x > threshold && currentIndex > 0) {
       setPage(TABS[currentIndex - 1].id)
     }
-    // If the drag didn't cross the threshold, Framer Motion automatically
-    // springs the page back to x:0 — that's the "sticky, stops with your finger" feel.
+  }
+
+  function handleStartChat(chatDetails) {
+    setPendingChat(chatDetails)
+    setPage('chats')
   }
 
   if (splash) return <SplashScreen onDone={() => setSplash(false)} />
@@ -155,7 +159,7 @@ function App() {
   if (session && onboarded) {
     return (
       <div style={{
-        background: '#ffffff',
+        background: 'var(--page-bg)',
         minHeight: '100vh',
         fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
         display: 'flex',
@@ -168,7 +172,7 @@ function App() {
           }
         `}</style>
 
-        {/* Global top-right profile icon — works from every page, like Google */}
+        {/* Global top-right profile avatar trigger */}
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
           display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
@@ -179,20 +183,20 @@ function App() {
             onClick={() => setShowProfile(true)}
             style={{
               width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
-              background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', pointerEvents: 'auto',
-              border: '2px solid #fff', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+              border: '2px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
             }}
           >
             {myAvatar ? (
               <img src={myAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              <UserCircle size={22} color="#7C3AED" />
+              <UserCircle size={22} color="var(--app-accent)" />
             )}
           </motion.div>
         </div>
 
-        {/* Sticky drag-following page container */}
+        {/* Drag-following main page container */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: '70px' }}>
           <motion.div
             key={page}
@@ -206,22 +210,30 @@ function App() {
               width: '100%', height: '100%', overflowY: 'auto', touchAction: 'pan-y',
             }}
           >
-            {page === 'feed' && <Feed session={session} />}
+            {page === 'feed' && <Feed session={session} onOpenChats={() => setPage('chats')} onStartChat={handleStartChat} />}
             {page === 'news' && <News session={session} />}
-            {page === 'polymart' && <Polymart session={session} />}
+            {page === 'polymart' && <Polymart session={session} onMessageSeller={handleStartChat} />}
+            {page === 'chats' && (
+              <Chats
+                session={session}
+                pendingChat={pendingChat}
+                onClearPending={() => setPendingChat(null)}
+                onBack={() => setPage('feed')}
+              />
+            )}
           </motion.div>
         </div>
 
-        {/* Bottom Navigation — 3 tabs, Chats added later as 4th */}
+        {/* Bottom Navigation — Instagram-style dark mode support */}
         <div style={{
           position: 'fixed',
           bottom: 0, left: 0, right: 0,
-          background: '#ffffff',
-          borderTop: '1px solid #F0EEFF',
+          background: 'var(--card-bg)',
+          borderTop: '1px solid var(--app-border)',
           display: 'flex',
           padding: '10px 0 18px',
           zIndex: 100,
-          boxShadow: '0 -4px 20px rgba(124,58,237,0.06)',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.05)',
         }}>
           {TABS.map(tab => {
             const isActive = page === tab.id
@@ -242,19 +254,19 @@ function App() {
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                     style={{
                       position: 'absolute', top: '-4px', width: '40px', height: '4px',
-                      background: '#7C3AED', borderRadius: '2px',
+                      background: 'var(--app-accent)', borderRadius: '2px',
                     }}
                   />
                 )}
                 <IconComponent
                   size={24}
-                  strokeWidth={isActive ? 2.5 : 2}
-                  color={isActive ? '#7C3AED' : '#CBD5E1'}
+                  strokeWidth={isActive ? 2.5 : 1.8}
+                  color={isActive ? 'var(--text-strong)' : 'var(--text-muted)'}
                   style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
                 />
                 <span style={{
                   fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
-                  color: isActive ? '#7C3AED' : '#CBD5E1',
+                  color: isActive ? 'var(--text-strong)' : 'var(--text-muted)',
                 }}>
                   {tab.label}
                 </span>
@@ -263,36 +275,29 @@ function App() {
           })}
         </div>
 
-        {/* Profile slide-over — global, opens from top-right icon */}
+        {/* Profile Slide-Over */}
         <AnimatePresence>
           {showProfile && (
             <>
               <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 onClick={() => setShowProfile(false)}
                 style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200 }}
               />
+
               <motion.div
-                initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
                 transition={{ type: 'spring', stiffness: 300, damping: 32 }}
                 style={{
                   position: 'fixed', top: 0, bottom: 0, right: 0, width: '100%',
-                  background: '#ffffff', zIndex: 201, overflowY: 'auto',
+                  background: 'var(--page-bg)', zIndex: 201, overflowY: 'auto',
                 }}
               >
-                <motion.div
-                  whileTap={{ scale: 0.85 }}
-                  onClick={() => setShowProfile(false)}
-                  style={{
-                    position: 'absolute', top: '16px', left: '16px', zIndex: 5,
-                    width: '36px', height: '36px', borderRadius: '12px',
-                    background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <X size={18} color="#7C3AED" />
-                </motion.div>
-                <Profile session={session} />
+                <Profile session={session} onBack={() => setShowProfile(false)} />
               </motion.div>
             </>
           )}
@@ -308,26 +313,26 @@ function App() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#ffffff',
+      background: 'var(--page-bg)',
       fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
       padding: '24px',
     }}>
       <div style={{
-        background: '#F8F7FF',
+        background: 'var(--card-bg)',
         padding: '40px 32px',
         borderRadius: '24px',
         width: '100%',
         maxWidth: '360px',
-        border: '1.5px solid #E8E4FF',
+        border: '1.5px solid var(--app-border)',
         boxShadow: '0 8px 40px rgba(124,58,237,0.08)',
       }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h1 style={{
-            color: '#1A1A2E', margin: '0 0 4px', fontSize: '28px',
+            color: 'var(--text-strong)', margin: '0 0 4px', fontSize: '28px',
             fontWeight: 900, letterSpacing: '-0.5px',
           }}>PolyNet</h1>
           <p style={{
-            color: '#7C3AED', fontSize: '11px', fontWeight: 700,
+            color: 'var(--app-accent)', fontSize: '11px', fontWeight: 700,
             letterSpacing: '3px', margin: 0, fontStyle: 'italic', fontFamily: 'Georgia, serif',
           }}>Link Up</p>
         </div>
@@ -340,8 +345,8 @@ function App() {
             onChange={e => setEmail(e.target.value)}
             style={{
               width: '100%', padding: '14px', marginBottom: '12px',
-              borderRadius: '14px', border: '1.5px solid #E8E4FF',
-              background: '#fff', color: '#1A1A2E', fontSize: '15px',
+              borderRadius: '14px', border: '1.5px solid var(--app-border)',
+              background: 'var(--input-bg)', color: 'var(--text-strong)', fontSize: '15px',
               boxSizing: 'border-box', outline: 'none',
             }}
           />
@@ -352,14 +357,14 @@ function App() {
             onChange={e => setPassword(e.target.value)}
             style={{
               width: '100%', padding: '14px', marginBottom: '20px',
-              borderRadius: '14px', border: '1.5px solid #E8E4FF',
-              background: '#fff', color: '#1A1A2E', fontSize: '15px',
+              borderRadius: '14px', border: '1.5px solid var(--app-border)',
+              background: 'var(--input-bg)', color: 'var(--text-strong)', fontSize: '15px',
               boxSizing: 'border-box', outline: 'none',
             }}
           />
           <motion.button whileTap={{ scale: 0.96 }} type="submit" disabled={loading} style={{
             width: '100%', padding: '15px', borderRadius: '14px',
-            border: 'none', background: '#7C3AED', color: '#fff',
+            border: 'none', background: 'var(--app-accent)', color: '#fff',
             fontWeight: 700, fontSize: '16px', marginBottom: '12px',
             cursor: 'pointer', boxShadow: '0 4px 20px rgba(124,58,237,0.35)',
           }}>
@@ -367,15 +372,15 @@ function App() {
           </motion.button>
           <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setAuthView('signup')} disabled={loading} style={{
             width: '100%', padding: '15px', borderRadius: '14px',
-            border: '1.5px solid #7C3AED', background: 'transparent',
-            color: '#7C3AED', fontWeight: 700, fontSize: '16px', cursor: 'pointer',
+            border: '1.5px solid var(--app-accent)', background: 'transparent',
+            color: 'var(--app-accent)', fontWeight: 700, fontSize: '16px', cursor: 'pointer',
           }}>
             Create Account
           </motion.button>
         </form>
 
         {message && (
-          <p style={{ color: '#7C3AED', textAlign: 'center', marginTop: '16px', fontSize: '13px' }}>
+          <p style={{ color: 'var(--app-accent)', textAlign: 'center', marginTop: '16px', fontSize: '13px' }}>
             {message}
           </p>
         )}

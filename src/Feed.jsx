@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { FeedSkeleton } from './Skeleton'
@@ -9,6 +10,8 @@ const TYPE_STYLES = {
   opportunity: { label: 'Opportunity', color: '#d97706', bg: 'var(--app-accent-soft)', icon: 'store' },
   general: { label: 'Post', color: 'var(--text-muted)', bg: 'var(--app-accent-soft)', icon: 'message-circle' },
 }
+
+const LIKE_RED = '#ED4956' // Instagram-style heart red
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -61,6 +64,44 @@ function Avatar({ url, name, size = 40, onClick }) {
   )
 }
 
+// The heart — Instagram-style: fills solid red and bumps on like.
+// `pulseKey` changes on every like action, forcing the keyframe animation to replay.
+function LikeButton({ isLiked, count, pulseKey, onClick }) {
+  return (
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+      <motion.div
+        key={pulseKey}
+        initial={{ scale: 1 }}
+        animate={{ scale: isLiked ? [1, 1.35, 0.9, 1.08, 1] : 1 }}
+        transition={{ duration: 0.45, ease: 'easeInOut' }}
+        whileTap={{ scale: 0.8 }}
+        style={{ display: 'flex' }}
+      >
+        <Icon
+          name="heart"
+          size={18}
+          color={isLiked ? LIKE_RED : 'var(--text-muted)'}
+          fill={isLiked ? LIKE_RED : 'none'}
+        />
+      </motion.div>
+      <span style={{ fontWeight: 700, fontSize: '12px', color: isLiked ? LIKE_RED : 'var(--text-muted)' }}>
+        {count > 0 ? count : 'Like'}
+      </span>
+    </div>
+  )
+}
+
+function CommentButton({ isOpen, count, onClick }) {
+  return (
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+      <Icon name="comment" size={17} color={isOpen ? 'var(--app-accent)' : 'var(--text-muted)'} />
+      <span style={{ fontWeight: 700, fontSize: '12px', color: isOpen ? 'var(--app-accent)' : 'var(--text-muted)' }}>
+        {count > 0 ? count : 'Comment'}
+      </span>
+    </div>
+  )
+}
+
 function Feed({ session, onViewProfile }) {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -77,7 +118,12 @@ function Feed({ session, onViewProfile }) {
   const [uploading, setUploading] = useState(false)
   const [showCaptionField, setShowCaptionField] = useState(false)
 
+  // Real, persisted like/comment state
   const [likedIds, setLikedIds] = useState(new Set())
+  const [likeCounts, setLikeCounts] = useState({})       // { postId: number }
+  const [commentCounts, setCommentCounts] = useState({}) // { postId: number }
+  const [likePulse, setLikePulse] = useState({})         // { postId: number } — bump animation trigger
+
   const [burstId, setBurstId] = useState(null)
   const [openComments, setOpenComments] = useState(null)
   const [commentsByPost, setCommentsByPost] = useState({})
@@ -87,9 +133,14 @@ function Feed({ session, onViewProfile }) {
   const [openMenuId, setOpenMenuId] = useState(null)
   const [savedIds, setSavedIds] = useState(new Set())
 
+  // Fullscreen image viewer state
+  const [viewingPost, setViewingPost] = useState(null)
+  const tapTimer = useRef(null)
+
   useEffect(() => {
     fetchPosts()
     fetchMyAvatar()
+    fetchMyLikes()
   }, [])
 
   async function fetchMyAvatar() {
@@ -101,14 +152,40 @@ function Feed({ session, onViewProfile }) {
     if (data) setMyAvatar(data.avatar_url)
   }
 
+  async function fetchMyLikes() {
+    const { data } = await supabase
+      .from('post_likes')
+      .select('post_id')
+      .eq('user_id', session.user.id)
+    if (data) setLikedIds(new Set(data.map(r => r.post_id)))
+  }
+
   async function fetchPosts() {
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('feed_posts')
-      .select('id, content, post_type, created_at, author_id, image_url, profiles(full_name, department, avatar_url)')
+      .select(`
+        id, content, post_type, created_at, author_id, image_url,
+        profiles(full_name, department, avatar_url),
+        likes:post_likes(count),
+        comments:feed_comments(count)
+      `)
       .order('created_at', { ascending: false })
       .limit(30)
-    if (data) setPosts(data)
+
+    if (error) console.error('Error fetching posts:', error.message)
+
+    if (data) {
+      setPosts(data)
+      const nextLikeCounts = {}
+      const nextCommentCounts = {}
+      data.forEach(p => {
+        nextLikeCounts[p.id] = p.likes?.[0]?.count ?? 0
+        nextCommentCounts[p.id] = p.comments?.[0]?.count ?? 0
+      })
+      setLikeCounts(nextLikeCounts)
+      setCommentCounts(nextCommentCounts)
+    }
     setLoading(false)
   }
 
@@ -119,14 +196,16 @@ function Feed({ session, onViewProfile }) {
 
   function closeComposer() {
     setComposerOpen(false)
-    setTimeout(() => {
-      setComposerStep('choose')
-      setNewContent('')
-      setNewType('general')
-      setImageFile(null)
-      setImagePreview(null)
-      setShowCaptionField(false)
-    }, 300) // wait for slide-out animation before resetting
+    // fields are reset in AnimatePresence's onExitComplete, once the close animation finishes
+  }
+
+  function resetComposerFields() {
+    setComposerStep('choose')
+    setNewContent('')
+    setNewType('general')
+    setImageFile(null)
+    setImagePreview(null)
+    setShowCaptionField(false)
   }
 
   async function handleImageSelect(e) {
@@ -167,22 +246,74 @@ function Feed({ session, onViewProfile }) {
     setPosting(false)
   }
 
-  function likePost(id) {
-    setLikedIds(prev => new Set(prev).add(id))
-  }
+  // Persisted like toggle — optimistic UI, reverts on failure
+  async function toggleLike(postId) {
+    const alreadyLiked = likedIds.has(postId)
 
-  function toggleLike(id) {
     setLikedIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      alreadyLiked ? next.delete(postId) : next.add(postId)
       return next
     })
+    setLikeCounts(prev => ({
+      ...prev,
+      [postId]: Math.max(0, (prev[postId] || 0) + (alreadyLiked ? -1 : 1)),
+    }))
+    if (!alreadyLiked) {
+      setLikePulse(prev => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }))
+    }
+
+    if (alreadyLiked) {
+      const { error } = await supabase
+        .from('post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', session.user.id)
+      if (error) {
+        console.error('Unlike failed:', error.message)
+        setLikedIds(prev => new Set(prev).add(postId))
+        setLikeCounts(prev => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }))
+      }
+    } else {
+      const { error } = await supabase
+        .from('post_likes')
+        .insert({ post_id: postId, user_id: session.user.id })
+      if (error) {
+        console.error('Like failed:', error.message)
+        setLikedIds(prev => {
+          const next = new Set(prev)
+          next.delete(postId)
+          return next
+        })
+        setLikeCounts(prev => ({ ...prev, [postId]: Math.max(0, (prev[postId] || 0) - 1) }))
+      }
+    }
   }
 
-  function handleDoubleTap(id) {
-    likePost(id)
-    setBurstId(id)
-    setTimeout(() => setBurstId(current => (current === id ? null : current)), 700)
+  // Double-tap on the image only *likes* (never unlikes) — matches Instagram behavior
+  function handleDoubleTap(postId) {
+    if (!likedIds.has(postId)) toggleLike(postId)
+    setBurstId(postId)
+    setTimeout(() => setBurstId(current => (current === postId ? null : current)), 700)
+  }
+
+  // Distinguishes a single tap (open fullscreen) from a double tap (like) on the image
+  function handleImageTap(post) {
+    if (tapTimer.current) {
+      clearTimeout(tapTimer.current)
+      tapTimer.current = null
+      handleDoubleTap(post.id)
+    } else {
+      tapTimer.current = setTimeout(() => {
+        tapTimer.current = null
+        setViewingPost(post)
+      }, 240)
+    }
+  }
+
+  function closeImageViewer() {
+    setViewingPost(null)
+    setOpenMenuId(null)
   }
 
   async function toggleComments(postId) {
@@ -212,6 +343,7 @@ function Feed({ session, onViewProfile }) {
         .eq('post_id', postId)
         .order('created_at', { ascending: true })
       setCommentsByPost(prev => ({ ...prev, [postId]: data || [] }))
+      setCommentCounts(prev => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }))
       setNewComment('')
     }
     setCommentLoading(false)
@@ -223,6 +355,7 @@ function Feed({ session, onViewProfile }) {
       if (!error) {
         setPosts(prev => prev.filter(p => p.id !== postId))
         setOpenMenuId(null)
+        if (viewingPost?.id === postId) setViewingPost(null)
       }
     }
   }
@@ -276,9 +409,10 @@ function Feed({ session, onViewProfile }) {
           const comments = commentsByPost[post.id] || []
           const isOwnPost = post.author_id === session.user.id
           const goToAuthor = () => onViewProfile?.(post.author_id, isOwnPost)
+          const isViewingThis = viewingPost?.id === post.id
 
           return (
-            <div key={post.id} style={{ borderBottom: '8px solid var(--app-border)' }}>
+            <motion.div key={post.id} layout="position" style={{ borderBottom: '8px solid var(--app-border)' }}>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 16px', position: 'relative' }}>
                 <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={goToAuthor} />
                 <div style={{ flex: 1 }}>
@@ -301,7 +435,7 @@ function Feed({ session, onViewProfile }) {
                     >
                       <Icon name="ellipsis-vertical" size={18} />
                     </div>
-                    {openMenuId === post.id && (
+                    {openMenuId === post.id && !isViewingThis && (
                       <div style={{
                         position: 'absolute', top: '100%', right: 0, zIndex: 100,
                         background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
@@ -352,12 +486,22 @@ function Feed({ session, onViewProfile }) {
               )}
 
               {post.image_url && (
-                <div onDoubleClick={() => handleDoubleTap(post.id)} style={{ position: 'relative' }}>
-                  <img src={post.image_url} alt="post" style={{ width: '100%', maxHeight: '420px', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'relative' }}>
+                  <motion.img
+                    layoutId={`post-image-${post.id}`}
+                    onClick={() => handleImageTap(post)}
+                    src={post.image_url}
+                    alt="post"
+                    style={{
+                      width: '100%', maxHeight: '420px', objectFit: 'cover', display: 'block',
+                      cursor: 'pointer',
+                      opacity: isViewingThis ? 0 : 1, // hide thumbnail while its fullscreen twin is shown
+                    }}
+                  />
                   {burstId === post.id && (
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                       <div style={{ color: '#fff', filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
-                        <Icon name="heart" size={72} strokeWidth={0} color="#fff" style={{ fill: '#fff' }} />
+                        <Icon name="heart" size={72} strokeWidth={0} color="#fff" fill="#fff" />
                       </div>
                     </div>
                   )}
@@ -365,37 +509,51 @@ function Feed({ session, onViewProfile }) {
               )}
 
               <div style={{ display: 'flex', gap: '18px', padding: post.image_url ? '10px 16px 0' : '0 16px' }}>
-                <div onClick={() => toggleLike(post.id)} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '12px', color: isLiked ? 'var(--danger)' : 'var(--text-muted)' }}>
-                  <Icon name="heart" size={18} color={isLiked ? 'var(--danger)' : 'currentColor'} style={isLiked ? { fill: 'var(--danger)', animation: 'heartPop 0.35s ease' } : {}} />
-                  {isLiked ? 'Liked' : 'Like'}
-                </div>
-                <div onClick={() => toggleComments(post.id)} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '12px', color: openComments === post.id ? 'var(--app-accent)' : 'var(--text-muted)' }}>
-                  <Icon name="message-circle" size={17} />
-                  {comments.length > 0 ? `${comments.length} Comment${comments.length > 1 ? 's' : ''}` : 'Comment'}
-                </div>
+                <LikeButton
+                  isLiked={isLiked}
+                  count={likeCounts[post.id] || 0}
+                  pulseKey={likePulse[post.id] || 0}
+                  onClick={() => toggleLike(post.id)}
+                />
+                <CommentButton
+                  isOpen={openComments === post.id}
+                  count={commentCounts[post.id] || 0}
+                  onClick={() => toggleComments(post.id)}
+                />
               </div>
 
-              {openComments === post.id && (
-                <div style={{ padding: '0 16px 14px' }}>
-                  {comments.map(c => (
-                    <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                      <Avatar name={c.profiles?.full_name || 'S'} size={26} />
-                      <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1 }}>
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)' }}>{c.profiles?.full_name || 'PolyNet Student'}</div>
-                        <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px' }}>{c.content}</div>
+              <AnimatePresence initial={false}>
+                {openComments === post.id && (
+                  <motion.div
+                    key="comments"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.7 }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div style={{ padding: '0 16px 14px' }}>
+                      {comments.map(c => (
+                        <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                          <Avatar name={c.profiles?.full_name || 'S'} size={26} />
+                          <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1 }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)' }}>{c.profiles?.full_name || 'PolyNet Student'}</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px' }}>{c.content}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {comments.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>No comments yet</p>}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitComment(post.id) }} placeholder="Write a comment..." style={{ flex: 1, padding: '10px 12px', borderRadius: '12px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--text-strong)', outline: 'none', fontSize: '13px' }} />
+                        <button onClick={() => submitComment(post.id)} disabled={commentLoading || !newComment.trim()} style={{ padding: '10px 14px', borderRadius: '12px', border: 'none', background: newComment.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                          <Icon name="send" size={14} />
+                        </button>
                       </div>
                     </div>
-                  ))}
-                  {comments.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>No comments yet</p>}
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                    <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitComment(post.id) }} placeholder="Write a comment..." style={{ flex: 1, padding: '10px 12px', borderRadius: '12px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--text-strong)', outline: 'none', fontSize: '13px' }} />
-                    <button onClick={() => submitComment(post.id)} disabled={commentLoading || !newComment.trim()} style={{ padding: '10px 14px', borderRadius: '12px', border: 'none', background: newComment.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                      <Icon name="send" size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           )
         })}
       </div>
@@ -418,213 +576,369 @@ function Feed({ session, onViewProfile }) {
         <Icon name="plus" size={26} />
       </div>
 
-      {/* Dark overlay behind slide-in panel */}
-      {composerOpen && (
-        <div
-          onClick={closeComposer}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-            zIndex: 150, animation: 'fadeIn 0.25s ease',
-          }}
-        />
-      )}
-
-      {/* Slide-in composer panel — from left */}
-      <div
-        style={{
-          position: 'fixed',
-          top: 0, bottom: 0, left: 0,
-          width: '86%',
-          maxWidth: '360px',
-          background: 'var(--card-bg)',
-          zIndex: 160,
-          transform: composerOpen ? 'translateX(0)' : 'translateX(-100%)',
-          transition: 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
-          boxShadow: '8px 0 40px rgba(0,0,0,0.2)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        {/* Panel header */}
-        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {composerStep !== 'choose' && (
-            <div onClick={() => setComposerStep('choose')} style={{ cursor: 'pointer', color: 'var(--text-strong)' }}>
-              <Icon name="arrowLeft" size={20} />
-            </div>
-          )}
-          <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
-            {composerStep === 'choose' ? 'New Post' : composerStep === 'photo' ? 'Add Photo' : 'Write Something'}
-          </h2>
-          <div onClick={closeComposer} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
-            <Icon name="x" size={20} />
-          </div>
-        </div>
-
-        {/* Step: choose */}
-        {composerStep === 'choose' && (
-          <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div
-              onClick={() => setComposerStep('photo')}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
-                borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
-                cursor: 'pointer', background: 'var(--page-bg)',
-              }}
-            >
-              <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="camera" size={20} color="var(--app-accent)" />
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Photo</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Share a picture with campus</div>
-              </div>
-            </div>
+      {/* Composer — now a centered card covering only the middle of the screen.
+          Backdrop fades at one pace; the card itself springs in from the left
+          at a distinctly different, bouncier pace. Fields reset only after the
+          exit animation fully completes. */}
+      <AnimatePresence onExitComplete={resetComposerFields}>
+        {composerOpen && (
+          <>
+            <motion.div
+              key="composer-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.28 }}
+              onClick={closeComposer}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 150 }}
+            />
 
             <div
-              onClick={() => setComposerStep('text')}
               style={{
-                display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
-                borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
-                cursor: 'pointer', background: 'var(--page-bg)',
+                position: 'fixed', inset: 0, zIndex: 160,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '40px 24px',
+                pointerEvents: 'none', // taps outside the card fall through to the backdrop
               }}
             >
-              <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="message-circle" size={20} color="var(--app-accent)" />
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Text</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Write an update or announcement</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step: photo */}
-        {composerStep === 'photo' && (
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-            {!imagePreview ? (
-              <label style={{
-                flex: 1, minHeight: '220px', borderRadius: '16px',
-                border: '2px dashed var(--app-border-soft)', display: 'flex',
-                flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: '10px', cursor: 'pointer', color: 'var(--text-muted)',
-              }}>
-                <Icon name="imagePlus" size={32} color="var(--app-accent)" />
-                <span style={{ fontSize: '13.5px', fontWeight: 600 }}>{uploading ? 'Processing...' : 'Tap to select a photo'}</span>
-                <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
-              </label>
-            ) : (
-              <>
-                <div style={{ position: 'relative' }}>
-                  <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '280px', objectFit: 'cover', borderRadius: '16px' }} />
-                  <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{
-                    position: 'absolute', top: '8px', right: '8px', width: '30px', height: '30px',
-                    borderRadius: '50%', background: 'rgba(0,0,0,0.65)', color: '#fff',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                  }}>
-                    <Icon name="x" size={15} />
-                  </div>
-                </div>
-
-                {!showCaptionField ? (
-                  <div
-                    onClick={() => setShowCaptionField(true)}
-                    style={{
-                      marginTop: '14px', padding: '12px', borderRadius: '12px',
-                      border: '1.5px dashed var(--app-border-soft)', textAlign: 'center',
-                      color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-                    }}
-                  >
-                    + Add Caption
-                  </div>
-                ) : (
-                  <textarea
-                    value={newContent}
-                    onChange={e => setNewContent(e.target.value)}
-                    placeholder="Write a caption..."
-                    rows={2}
-                    autoFocus
-                    style={{
-                      width: '100%', marginTop: '14px', padding: '12px', borderRadius: '12px',
-                      border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
-                      color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
-                      outline: 'none', fontFamily: 'inherit', fontSize: '13.5px',
-                    }}
-                  />
-                )}
-
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
-                  {Object.entries(TYPE_STYLES).map(([key, value]) => (
-                    <div key={key} onClick={() => setNewType(key)} style={{
-                      padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
-                      cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
-                      background: newType === key ? value.bg : 'transparent', color: value.color,
-                    }}>
-                      {value.label}
+              <motion.div
+                key="composer-panel"
+                initial={{ x: '-55%', opacity: 0, scale: 0.94 }}
+                animate={{ x: 0, opacity: 1, scale: 1 }}
+                exit={{ x: '-55%', opacity: 0, scale: 0.94 }}
+                transition={{ type: 'spring', stiffness: 230, damping: 26, mass: 0.9 }}
+                style={{
+                  width: '100%',
+                  maxWidth: '360px',
+                  maxHeight: '76vh',
+                  background: 'var(--card-bg)',
+                  borderRadius: '26px',
+                  boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  pointerEvents: 'auto',
+                }}
+              >
+                {/* Panel header */}
+                <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  {composerStep !== 'choose' && (
+                    <div onClick={() => setComposerStep('choose')} style={{ cursor: 'pointer', color: 'var(--text-strong)' }}>
+                      <Icon name="arrowLeft" size={20} />
                     </div>
-                  ))}
+                  )}
+                  <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
+                    {composerStep === 'choose' ? 'New Post' : composerStep === 'photo' ? 'Add Photo' : 'Write Something'}
+                  </h2>
+                  <div onClick={closeComposer} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+                    <Icon name="x" size={20} />
+                  </div>
                 </div>
 
-                <button
-                  onClick={handlePost}
-                  disabled={posting || uploading}
-                  style={{
-                    width: '100%', marginTop: 'auto', padding: '14px', borderRadius: '14px',
-                    border: 'none', background: 'var(--app-accent)', color: '#fff',
-                    fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', marginBottom: '4px',
-                  }}
-                >
-                  {posting ? 'Posting...' : 'Post'}
-                </button>
-              </>
-            )}
-          </div>
-        )}
+                <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  {/* Step: choose */}
+                  {composerStep === 'choose' && (
+                    <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div
+                        onClick={() => setComposerStep('photo')}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
+                          borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
+                          cursor: 'pointer', background: 'var(--page-bg)',
+                        }}
+                      >
+                        <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon name="camera" size={20} color="var(--app-accent)" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Photo</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Share a picture with campus</div>
+                        </div>
+                      </div>
 
-        {/* Step: text */}
-        {composerStep === 'text' && (
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-            <textarea
-              value={newContent}
-              onChange={e => setNewContent(e.target.value)}
-              placeholder="Share something with campus..."
-              rows={6}
-              autoFocus
+                      <div
+                        onClick={() => setComposerStep('text')}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
+                          borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
+                          cursor: 'pointer', background: 'var(--page-bg)',
+                        }}
+                      >
+                        <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon name="comment" size={20} color="var(--app-accent)" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Text</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Write an update or announcement</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step: photo */}
+                  {composerStep === 'photo' && (
+                    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                      {!imagePreview ? (
+                        <label style={{
+                          flex: 1, minHeight: '220px', borderRadius: '16px',
+                          border: '2px dashed var(--app-border-soft)', display: 'flex',
+                          flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                          gap: '10px', cursor: 'pointer', color: 'var(--text-muted)',
+                        }}>
+                          <Icon name="imagePlus" size={32} color="var(--app-accent)" />
+                          <span style={{ fontSize: '13.5px', fontWeight: 600 }}>{uploading ? 'Processing...' : 'Tap to select a photo'}</span>
+                          <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+                        </label>
+                      ) : (
+                        <>
+                          <div style={{ position: 'relative' }}>
+                            <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '280px', objectFit: 'cover', borderRadius: '16px' }} />
+                            <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{
+                              position: 'absolute', top: '8px', right: '8px', width: '30px', height: '30px',
+                              borderRadius: '50%', background: 'rgba(0,0,0,0.65)', color: '#fff',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                            }}>
+                              <Icon name="x" size={15} />
+                            </div>
+                          </div>
+
+                          {!showCaptionField ? (
+                            <div
+                              onClick={() => setShowCaptionField(true)}
+                              style={{
+                                marginTop: '14px', padding: '12px', borderRadius: '12px',
+                                border: '1.5px dashed var(--app-border-soft)', textAlign: 'center',
+                                color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+                              }}
+                            >
+                              + Add Caption
+                            </div>
+                          ) : (
+                            <textarea
+                              value={newContent}
+                              onChange={e => setNewContent(e.target.value)}
+                              placeholder="Write a caption..."
+                              rows={2}
+                              autoFocus
+                              style={{
+                                width: '100%', marginTop: '14px', padding: '12px', borderRadius: '12px',
+                                border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                                color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
+                                outline: 'none', fontFamily: 'inherit', fontSize: '13.5px',
+                              }}
+                            />
+                          )}
+
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
+                            {Object.entries(TYPE_STYLES).map(([key, value]) => (
+                              <div key={key} onClick={() => setNewType(key)} style={{
+                                padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
+                                cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
+                                background: newType === key ? value.bg : 'transparent', color: value.color,
+                              }}>
+                                {value.label}
+                              </div>
+                            ))}
+                          </div>
+
+                          <button
+                            onClick={handlePost}
+                            disabled={posting || uploading}
+                            style={{
+                              width: '100%', marginTop: '18px', padding: '14px', borderRadius: '14px',
+                              border: 'none', background: 'var(--app-accent)', color: '#fff',
+                              fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', marginBottom: '4px',
+                            }}
+                          >
+                            {posting ? 'Posting...' : 'Post'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Step: text */}
+                  {composerStep === 'text' && (
+                    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                      <textarea
+                        value={newContent}
+                        onChange={e => setNewContent(e.target.value)}
+                        placeholder="Share something with campus..."
+                        rows={6}
+                        autoFocus
+                        style={{
+                          width: '100%', padding: '14px', borderRadius: '14px',
+                          border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                          color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
+                          outline: 'none', fontFamily: 'inherit', fontSize: '14.5px',
+                        }}
+                      />
+
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
+                        {Object.entries(TYPE_STYLES).map(([key, value]) => (
+                          <div key={key} onClick={() => setNewType(key)} style={{
+                            padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
+                            cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
+                            background: newType === key ? value.bg : 'transparent', color: value.color,
+                          }}>
+                            {value.label}
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={handlePost}
+                        disabled={posting || !newContent.trim()}
+                        style={{
+                          width: '100%', marginTop: '18px', padding: '14px', borderRadius: '14px',
+                          border: 'none', background: newContent.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
+                          color: '#fff', fontWeight: 700, fontSize: '14.5px',
+                          cursor: newContent.trim() ? 'pointer' : 'default', marginBottom: '4px',
+                        }}
+                      >
+                        {posting ? 'Posting...' : 'Post'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Fullscreen Image Viewer — shared-element "magic motion" from the thumbnail */}
+      <AnimatePresence>
+        {viewingPost && (
+          <motion.div
+            // No fade-in on the backdrop itself — it snaps fully opaque immediately.
+            // This is what fixed the earlier flicker: previously the backdrop faded in at
+            // the same time the image was still flying across the screen, so on a slow
+            // image load you could briefly see the feed underneath through it.
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(10,10,14,0.97)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+            onClick={closeImageViewer}
+          >
+            <motion.img
+              layoutId={`post-image-${viewingPost.id}`}
+              transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+              src={viewingPost.image_url}
+              alt="post"
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={() => handleDoubleTap(viewingPost.id)}
               style={{
-                width: '100%', padding: '14px', borderRadius: '14px',
-                border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
-                color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
-                outline: 'none', fontFamily: 'inherit', fontSize: '14.5px',
+                width: '100%', maxHeight: '100vh', objectFit: 'contain',
               }}
             />
 
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
-              {Object.entries(TYPE_STYLES).map(([key, value]) => (
-                <div key={key} onClick={() => setNewType(key)} style={{
-                  padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
-                  cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
-                  background: newType === key ? value.bg : 'transparent', color: value.color,
-                }}>
-                  {value.label}
+            {burstId === viewingPost.id && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <div style={{ color: '#fff', filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
+                  <Icon name="heart" size={90} strokeWidth={0} color="#fff" fill="#fff" />
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
 
-            <button
-              onClick={handlePost}
-              disabled={posting || !newContent.trim()}
+            {/* Top bar — back button + 3 dots. Visible immediately; no load-gating. */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
               style={{
-                width: '100%', marginTop: 'auto', padding: '14px', borderRadius: '14px',
-                border: 'none', background: newContent.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
-                color: '#fff', fontWeight: 700, fontSize: '14.5px',
-                cursor: newContent.trim() ? 'pointer' : 'default', marginBottom: '4px',
+                position: 'absolute', top: 0, left: 0, right: 0,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '16px 16px 40px',
+                background: 'linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)',
               }}
             >
-              {posting ? 'Posting...' : 'Post'}
-            </button>
-          </div>
+              <div
+                onClick={closeImageViewer}
+                style={{
+                  width: '38px', height: '38px', borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', cursor: 'pointer',
+                }}
+              >
+                <Icon name="arrowLeft" size={19} color="#fff" />
+              </div>
+
+              <div style={{ position: 'relative' }}>
+                <div
+                  onClick={() => setOpenMenuId(openMenuId === viewingPost.id ? null : viewingPost.id)}
+                  style={{
+                    width: '38px', height: '38px', borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', cursor: 'pointer',
+                  }}
+                >
+                  <Icon name="ellipsis-vertical" size={19} color="#fff" />
+                </div>
+
+                <AnimatePresence>
+                  {openMenuId === viewingPost.id && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                      style={{
+                        position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 310,
+                        background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.35)', minWidth: '160px', overflow: 'hidden',
+                        transformOrigin: 'top right',
+                      }}
+                    >
+                      {viewingPost.author_id === session.user.id && (
+                        <div
+                          onClick={() => deletePost(viewingPost.id)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        >
+                          <Icon name="trash-2" size={14} />
+                          Delete
+                        </div>
+                      )}
+                      <div
+                        onClick={() => toggleSave(viewingPost.id)}
+                        style={{ padding: '12px 16px', fontSize: '13px', color: savedIds.has(viewingPost.id) ? 'var(--app-accent)' : 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                      >
+                        <Icon name="download" size={14} />
+                        {savedIds.has(viewingPost.id) ? 'Saved' : 'Save'}
+                      </div>
+                      {viewingPost.author_id !== session.user.id && (
+                        <div
+                          onClick={() => reportPost(viewingPost.id)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        >
+                          <Icon name="flag" size={14} />
+                          Report
+                        </div>
+                      )}
+                      <div
+                        onClick={() => sharePost(viewingPost.id)}
+                        style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                      >
+                        <Icon name="share-2" size={14} />
+                        Share
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
       <style>{`
         @keyframes fadeIn {

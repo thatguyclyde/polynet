@@ -23,18 +23,6 @@ const DEPARTMENTS = [
   'Secretarial Studies',
 ]
 
-const SUGGESTED_SKILLS = [
-  'Python', 'JavaScript', 'React', 'HTML/CSS', 'Java', 'PHP',
-  'Graphic Design', 'UI/UX Design', 'Figma', 'Photoshop', 'Illustrator',
-  'Video Editing', 'Photography', 'Content Writing', 'Copywriting',
-  'AutoCAD', 'SolidWorks', 'Welding', 'Electrical Wiring', 'Plumbing',
-  'Accounting', 'Bookkeeping', 'Microsoft Excel', 'Data Analysis',
-  'Public Speaking', 'Event Planning', 'Social Media Management',
-  'Carpentry', 'Bricklaying', 'Painting & Decorating',
-  'Hair Styling', 'Makeup Artistry', 'Fashion Design',
-  'Research', 'Report Writing', 'Tutoring',
-]
-
 const SOCIAL_PLATFORMS = [
   { id: 'instagram', label: 'Instagram', icon: 'instagram' },
   { id: 'twitter', label: 'Twitter / X', icon: 'twitter' },
@@ -148,10 +136,10 @@ function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onCancel }
   )
 }
 
-function Profile({ session }) {
+function Profile({ session, onBack }) {
   const { isDark, toggleTheme } = useTheme()
   const [editMode, setEditMode] = useState(false)
-const [allPlatformSkills, setAllPlatformSkills] = useState([])
+  const [allPlatformSkills, setAllPlatformSkills] = useState([])
   const [fullName, setFullName] = useState('')
   const [department, setDepartment] = useState('')
   const [deptSearch, setDeptSearch] = useState('')
@@ -174,11 +162,7 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
   const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState('')
   const [infoPage, setInfoPage] = useState(null)
-  const [confirmModal, setConfirmModal] = useState(null) // 'logout' | 'save' | null
-
-  useEffect(() => {
-    fetchProfile()
-  }, [])
+  const [confirmModal, setConfirmModal] = useState(null)
 
   useEffect(() => {
     fetchProfile()
@@ -219,7 +203,6 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
 
     setLoading(false)
   }
-
 
   async function handleAvatarSelect(e) {
     const file = e.target.files[0]
@@ -365,20 +348,65 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', paddingBottom: editMode ? '110px' : '24px' }}>
-      <div style={{ padding: '16px 20px 10px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      
+      {/* ═══ STICKY HEADER WITH TOP-RIGHT BACK BUTTON ═══ */}
+      <div style={{
+        padding: '16px 20px 12px',
+        background: 'var(--card-bg)',
+        borderBottom: '1px solid var(--app-border)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 20,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+      }}>
         <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-strong)' }}>
           {editMode ? 'Edit Profile' : 'My Profile'}
         </h1>
-        {editMode && (
-          <span onClick={() => { setEditMode(false); setAvatarFile(null); setAvatarPreview(null); fetchProfile() }} style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
-            Cancel
-          </span>
-        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {editMode && (
+            <span
+              onClick={() => {
+                setEditMode(false)
+                setAvatarFile(null)
+                setAvatarPreview(null)
+                fetchProfile()
+              }}
+              style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: '4px' }}
+            >
+              Cancel
+            </span>
+          )}
+
+          {/* Back button — pinned to the right edge of the header */}
+          {onBack && (
+            <button
+              onClick={onBack}
+              aria-label="Close Profile"
+              style={{
+                cursor: 'pointer',
+                width: '36px',
+                height: '36px',
+                borderRadius: '12px',
+                border: 'none',
+                background: 'var(--app-accent-soft)',
+                color: 'var(--app-accent)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="arrowLeft" size={20} color="var(--app-accent)" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ padding: '16px' }}>
 
-        {/* ═══ HERO — cover + avatar + name ═══ */}
+        {/* ═══ HERO — Cover + Avatar + Name ═══ */}
         <div style={{ borderRadius: '22px', overflow: 'hidden', border: '1px solid var(--app-border)', boxShadow: 'var(--shadow-card)' }}>
           <div style={{
             height: '84px',
@@ -467,6 +495,7 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
           </div>
         </div>
 
+        {/* ═══ EDIT FORM FIELDS ═══ */}
         {editMode && (
           <>
             <div style={cardStyle}>
@@ -531,22 +560,22 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
                   style={compactInput}
                 />
                 {showSkillList && skillSearch.length > 0 && (
-                <div style={dropdownStyle}>
-                  {!allPlatformSkills.find(s => s.toLowerCase() === skillSearch.toLowerCase()) && (
-                    <div onMouseDown={() => addSkill(skillSearch)} style={{ ...dropdownItem, color: 'var(--app-accent)', fontWeight: 700 }}>
-                      + Add "{skillSearch}" as a new skill
-                    </div>
-                  )}
-                  {filteredSkills.length === 0 && skillSearch.length > 0 && (
-                    <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                      No matches yet — be the first to add this skill!
-                    </div>
-                  )}
-                  {filteredSkills.slice(0, 8).map(s => (
-                    <div key={s} onMouseDown={() => addSkill(s)} style={dropdownItem}>{s}</div>
-                  ))}
-                </div>
-              )}
+                  <div style={dropdownStyle}>
+                    {!allPlatformSkills.find(s => s.toLowerCase() === skillSearch.toLowerCase()) && (
+                      <div onMouseDown={() => addSkill(skillSearch)} style={{ ...dropdownItem, color: 'var(--app-accent)', fontWeight: 700 }}>
+                        + Add "{skillSearch}" as a new skill
+                      </div>
+                    )}
+                    {filteredSkills.length === 0 && skillSearch.length > 0 && (
+                      <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        No matches yet — be the first to add this skill!
+                      </div>
+                    )}
+                    {filteredSkills.slice(0, 8).map(s => (
+                      <div key={s} onMouseDown={() => addSkill(s)} style={dropdownItem}>{s}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -592,7 +621,7 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
           </>
         )}
 
-        {/* ═══ PREFERENCES — always visible ═══ */}
+        {/* ═══ PREFERENCES ═══ */}
         <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '1.2px', color: 'var(--text-muted)', textTransform: 'uppercase', margin: '20px 4px 8px' }}>
           Preferences
         </div>
@@ -615,6 +644,7 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
         </button>
       </div>
 
+      {/* ═══ BOTTOM SAVE FLOATING ACTION BAR ═══ */}
       {editMode && (
         <div style={{
           position: 'fixed', bottom: '70px', left: 0, right: 0,
@@ -640,6 +670,7 @@ const [allPlatformSkills, setAllPlatformSkills] = useState([])
         </div>
       )}
 
+      {/* ═══ CONFIRMATION MODALS ═══ */}
       {confirmModal === 'save' && (
         <ConfirmModal
           title="Save changes?"
