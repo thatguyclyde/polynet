@@ -22,6 +22,16 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
+// Middle-truncates long strings — keeps the start and a bit of the end,
+// replaces the middle with an ellipsis. Reads better than a plain cutoff
+// for long department names like "Applied Arts (Clothing Technology...)".
+function middleTruncate(str, maxChars = 20) {
+  if (!str || str.length <= maxChars) return str
+  const keepStart = Math.ceil((maxChars - 1) * 0.62)
+  const keepEnd = Math.floor((maxChars - 1) * 0.38)
+  return `${str.slice(0, keepStart)}…${str.slice(str.length - keepEnd)}`
+}
+
 function compressImage(file, maxWidth = 1080, quality = 0.7) {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -133,7 +143,6 @@ function Feed({ session, onStartChat }) {
   const [viewingPost, setViewingPost] = useState(null)
   const tapTimer = useRef(null)
 
-  // Floating public profile card — set to a user id to show it
   const [viewingProfileId, setViewingProfileId] = useState(null)
 
   useEffect(() => {
@@ -379,13 +388,10 @@ function Feed({ session, onStartChat }) {
     setOpenMenuId(null)
   }
 
-  // Opens the floating public profile card for a post's author
   function goToAuthor(authorId) {
     setViewingProfileId(authorId)
   }
 
-  // Sends a "message request" to a user from their profile card, then
-  // hands off to the Chats tab exactly like PolyMart's "Message Seller" does
   function handleMessageUser({ id, name, avatar }) {
     onStartChat?.({
       listingId: null,
@@ -424,18 +430,43 @@ function Feed({ session, onStartChat }) {
             <motion.div key={post.id} layout="position" style={{ borderBottom: '8px solid var(--app-border)' }}>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 16px', position: 'relative' }}>
                 <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={() => goToAuthor(post.author_id)} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span onClick={() => goToAuthor(post.author_id)} style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer' }}>{name}</span>
-                    {dept && (
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{dept}</span>
-                    )}
-                    <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, color: type.color, background: type.bg }}>
-                      {type.label}
+
+                {/* Name + department + type badge — forced onto a single line.
+                    Name and department can each shrink and truncate; the badge
+                    never shrinks, so it's always fully visible. */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
+                  <span
+                    onClick={() => goToAuthor(post.author_id)}
+                    title={name}
+                    style={{
+                      fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      flexShrink: 1, minWidth: '30px', maxWidth: '48%',
+                    }}
+                  >
+                    {name}
+                  </span>
+                  {dept && (
+                    <span
+                      title={dept}
+                      style={{
+                        fontSize: '10px', color: 'var(--text-muted)',
+                        whiteSpace: 'nowrap', overflow: 'hidden',
+                        flexShrink: 1, minWidth: 0,
+                      }}
+                    >
+                      {middleTruncate(dept, 20)}
                     </span>
-                  </div>
+                  )}
+                  <span style={{
+                    padding: '3px 7px', borderRadius: '999px', fontSize: '9.5px', fontWeight: 700,
+                    color: type.color, background: type.bg, flexShrink: 0, whiteSpace: 'nowrap',
+                  }}>
+                    {type.label}
+                  </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{timeAgo(post.created_at)}</div>
                   <div style={{ position: 'relative' }}>
                     <div
@@ -934,7 +965,6 @@ function Feed({ session, onStartChat }) {
         )}
       </AnimatePresence>
 
-      {/* Floating public profile card */}
       {viewingProfileId && (
         <PublicProfileCard
           userId={viewingProfileId}
