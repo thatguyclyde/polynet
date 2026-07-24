@@ -10,6 +10,12 @@ const CATEGORY_STYLES = {
   other: { label: 'Other', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
 }
 
+const FILTERS = [
+  { id: 'all', label: 'All', color: 'var(--app-accent)', bg: 'var(--app-accent-soft)' },
+  { id: 'school', label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
+  { id: 'other', label: 'Other', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+]
+
 const LIKE_RED = '#ED4956'
 
 function timeAgo(dateStr) {
@@ -110,6 +116,7 @@ function Feed({ session, onStartChat }) {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [myAvatar, setMyAvatar] = useState(null)
+  const [activeFilter, setActiveFilter] = useState('all')
 
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerStep, setComposerStep] = useState('choose')
@@ -397,44 +404,73 @@ function Feed({ session, onStartChat }) {
     })
   }
 
+  const filteredPosts = activeFilter === 'all' ? posts : posts.filter(p => p.post_type === activeFilter)
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative', overflow: 'hidden' }}>
 
-      {/* Header — "PolyNet" wordmark only, left-aligned, unique display font,
-          dark-leaning purple gradient. No hard border — the header floats
-          over the feed with a frosted blur instead of a dividing line. */}
+      {/* Header — "PolyNet" wordmark, left-aligned, bright purple gradient,
+          frosted-blur backing instead of a hard border line. */}
       <div style={{
-        padding: '18px 20px 16px',
+        padding: '18px 20px 14px',
         background: 'color-mix(in srgb, var(--card-bg) 72%, transparent)',
         backdropFilter: 'blur(14px)',
         WebkitBackdropFilter: 'blur(14px)',
         position: 'sticky', top: 0, zIndex: 20,
-        boxShadow: '0 10px 24px -16px rgba(0,0,0,0.18)',
       }}>
-        <h1 style={{
-          margin: 0,
-          fontFamily: "'Righteous', -apple-system, BlinkMacSystemFont, sans-serif",
-          fontSize: '25px',
-          fontWeight: 400,
-          letterSpacing: '-0.3px',
-          background: 'linear-gradient(135deg, #4C1D95 0%, #7C3AED 55%, #9333EA 100%)',
-          WebkitBackgroundClip: 'text',
-          backgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          color: 'transparent',
-          display: 'inline-block',
-          textAlign: 'left',
-        }}>
-          PolyNet
-        </h1>
-        <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
-          Harare Poly
-        </p>
+        <div style={{ textAlign: 'left' }}>
+          <h1 style={{
+            margin: 0,
+            fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
+            fontSize: '26px',
+            fontWeight: 800,
+            letterSpacing: '-0.4px',
+            background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+            display: 'inline-block',
+          }}>
+            PolyNet
+          </h1>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+            Harare Poly
+          </p>
+        </div>
+
+        {/* Filter row — All / School Related / Other */}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '14px', overflowX: 'auto', paddingBottom: '2px' }}>
+          {FILTERS.map(f => {
+            const isActive = activeFilter === f.id
+            return (
+              <div
+                key={f.id}
+                onClick={() => setActiveFilter(f.id)}
+                style={{
+                  padding: '7px 14px', borderRadius: '999px', fontSize: '12.5px', fontWeight: 700,
+                  whiteSpace: 'nowrap', cursor: 'pointer',
+                  border: isActive ? `1.5px solid ${f.color}` : '1.5px solid var(--app-border-soft)',
+                  background: isActive ? f.bg : 'transparent',
+                  color: isActive ? f.color : 'var(--text-muted)',
+                  transition: 'border-color 0.15s, background 0.15s, color 0.15s',
+                }}
+              >
+                {f.label}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {loading ? <FeedSkeleton /> : (
       <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
-        {posts.map(post => {
+        {filteredPosts.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '70px 30px' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No posts here yet</p>
+          </div>
+        )}
+        {filteredPosts.map(post => {
           const name = post.profiles?.full_name || 'PolyNet Student'
           const dept = post.profiles?.department || ''
           const isSchoolRelated = post.post_type === 'school'
@@ -992,7 +1028,7 @@ function Feed({ session, onStartChat }) {
       )}
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Righteous&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
