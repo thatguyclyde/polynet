@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { NewsSkeleton } from './Skeleton'
+
+const LIKE_ACCENT = 'var(--app-accent)'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -36,6 +38,33 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
   })
 }
 
+// Thumbs-up like button — fills solid accent and bumps on like, same
+// mechanism as Feed's heart: pulseKey forces the keyframe to replay.
+function LikeButton({ isLiked, count, pulseKey, onClick }) {
+  return (
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+      <motion.div
+        key={pulseKey}
+        initial={{ scale: 1 }}
+        animate={{ scale: isLiked ? [1, 1.3, 0.9, 1.08, 1] : 1 }}
+        transition={{ duration: 0.4, ease: 'easeInOut' }}
+        whileTap={{ scale: 0.8 }}
+        style={{ display: 'flex' }}
+      >
+        <Icon
+          name="thumbsUp"
+          size={16}
+          color={isLiked ? LIKE_ACCENT : 'var(--text-muted)'}
+          fill={isLiked ? LIKE_ACCENT : 'none'}
+        />
+      </motion.div>
+      <span style={{ fontWeight: 700, fontSize: '12px', color: isLiked ? LIKE_ACCENT : 'var(--text-muted)' }}>
+        {count > 0 ? count : 'Like'}
+      </span>
+    </div>
+  )
+}
+
 function News({ session }) {
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -49,18 +78,51 @@ function News({ session }) {
   const [expandedId, setExpandedId] = useState(null)
   const [isAdmin, setIsAdmin] = useState(true)
 
+  // Real, persisted likes
+  const [likedIds, setLikedIds] = useState(new Set())
+  const [likeCounts, setLikeCounts] = useState({})
+  const [likePulse, setLikePulse] = useState({})
+
+  // 3-dot menu + fullscreen image viewer
+  const [openMenuId, setOpenMenuId] = useState(null)
+  const [viewingArticle, setViewingArticle] = useState(null)
+  const tapTimer = useRef(null)
+
   useEffect(() => {
     fetchArticles()
+    fetchMyLikes()
   }, [])
+
+  async function fetchMyLikes() {
+    const { data } = await supabase
+      .from('news_likes')
+      .select('article_id')
+      .eq('user_id', session.user.id)
+    if (data) setLikedIds(new Set(data.map(r => r.article_id)))
+  }
 
   async function fetchArticles() {
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('news_articles')
-      .select('id, title, body, image_url, created_at, author_id, profiles(full_name)')
+      .select(`
+        id, title, body, image_url, created_at, author_id,
+        profiles(full_name),
+        likes:news_likes(count)
+      `)
       .order('created_at', { ascending: false })
       .limit(30)
-    if (data) setArticles(data)
+
+    if (error) console.error('Error fetching articles:', error.message)
+
+    if (data) {
+      setArticles(data)
+      const nextCounts = {}
+      data.forEach(a => {
+        nextCounts[a.id] = a.likes?.[0]?.count ?? 0
+      })
+      setLikeCounts(nextCounts)
+    }
     setLoading(false)
   }
 
@@ -103,7 +165,6 @@ function News({ session }) {
 
   function closeComposer() {
     setShowComposer(false)
-    // fields reset once the exit animation finishes (see onExitComplete below)
   }
 
   function resetComposerFields() {
@@ -111,6 +172,94 @@ function News({ session }) {
     setBody('')
     setImageFile(null)
     setImagePreview(null)
+  }
+
+  // Persisted like toggle — optimistic UI, reverts on failure
+  async function toggleLike(articleId) {
+    const alreadyLiked = likedIds.has(articleId)
+
+    setLikedIds(prev => {
+      const next = new Set(prev)
+      alreadyLiked ? next.delete(articleId) : next.add(articleId)
+      return next
+    })
+    setLikeCounts(prev => ({
+      ...prev,
+      [articleId]: Math.max(0, (prev[articleId] || 0) + (alreadyLiked ? -1 : 1)),
+    }))
+    if (!alreadyLiked) {
+      setLikePulse(prev => ({ ...prev, [articleId]: (prev[articleId] || 0) + 1 }))
+    }
+
+    if (alreadyLiked) {
+      const { error } = await supabase
+        .from('news_likes')
+        .delete()
+        .eq('article_id', articleId)
+        .eq('user_id', session.user.id)
+      if (error) {
+        console.error('Unlike failed:', error.message)
+        setLikedIds(prev => new Set(prev).add(articleId))
+        setLikeCounts(prev => ({ ...prev, [articleId]: (prev[articleId] || 0) + 1 }))
+      }
+    } else {
+      const { error } = await supabase
+        .from('news_likes')
+        .insert({ article_id: articleId, user_id: session.user.id })
+      if (error) {
+        console.error('Like failed:', error.message)
+        setLikedIds(prev => {
+          const next = new Set(prev)
+          next.delete(articleId)
+          return next
+        })
+        setLikeCounts(prev => ({ ...prev, [articleId]: Math.max(0, (prev[articleId] || 0) - 1) }))
+      }
+    }
+  }
+
+  // Distinguish single tap (fullscreen) from a would-be double tap on the image
+  function handleImageTap(article) {
+    if (tapTimer.current) {
+      clearTimeout(tapTimer.current)
+      tapTimer.current = null
+    } else {
+      tapTimer.current = setTimeout(() => {
+        tapTimer.current = null
+        setViewingArticle(article)
+      }, 240)
+    }
+  }
+
+  function closeImageViewer() {
+    setViewingArticle(null)
+    setOpenMenuId(null)
+  }
+
+  async function deleteArticle(articleId) {
+    if (window.confirm('Are you sure you want to delete this article?')) {
+      const { error } = await supabase.from('news_articles').delete().eq('id', articleId)
+      if (!error) {
+        setArticles(prev => prev.filter(a => a.id !== articleId))
+        setOpenMenuId(null)
+        if (viewingArticle?.id === articleId) setViewingArticle(null)
+      }
+    }
+  }
+
+  function reportArticle(articleId) {
+    alert('Article reported. Thank you for helping keep our community safe!')
+    setOpenMenuId(null)
+  }
+
+  function shareArticle(article) {
+    if (navigator.share) {
+      navigator.share({ title: article.title, text: 'Check out this update on PolyNet' })
+    } else {
+      alert('Article link copied to clipboard!')
+      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#article-${article.id}`)
+    }
+    setOpenMenuId(null)
   }
 
   return (
@@ -144,9 +293,7 @@ function News({ session }) {
         </div>
       )}
 
-      {/* Composer — centered card covering only the middle of the screen.
-          Backdrop fades at one pace; the card springs in from the left at a
-          distinctly different, bouncier pace. Same pattern as Feed's composer. */}
+      {/* Composer — centered card, same pattern as Feed/PolyMart */}
       <AnimatePresence onExitComplete={resetComposerFields}>
         {showComposer && (
           <>
@@ -165,7 +312,7 @@ function News({ session }) {
                 position: 'fixed', inset: 0, zIndex: 160,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 padding: '40px 24px',
-                pointerEvents: 'none', // taps outside the card fall through to the backdrop
+                pointerEvents: 'none',
               }}
             >
               <motion.div
@@ -187,7 +334,6 @@ function News({ session }) {
                   pointerEvents: 'auto',
                 }}
               >
-                {/* Panel header */}
                 <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
                   <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
                     New Article
@@ -260,10 +406,27 @@ function News({ session }) {
         {articles.map(article => {
           const isExpanded = expandedId === article.id
           const preview = article.body?.length > 140 && !isExpanded ? article.body.slice(0, 140) + '...' : article.body
+          const isOwnArticle = article.author_id === session.user.id
+          const isLiked = likedIds.has(article.id)
+          const isViewingThis = viewingArticle?.id === article.id
 
           return (
             <div key={article.id} style={{ background: 'var(--card-bg)', borderRadius: '22px', border: '1px solid var(--app-border)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
-              {article.image_url && <img src={article.image_url} alt={article.title} style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }} />}
+              {article.image_url && (
+                <div style={{ position: 'relative' }}>
+                  <motion.img
+                    layoutId={`news-image-${article.id}`}
+                    onClick={() => handleImageTap(article)}
+                    src={article.image_url}
+                    alt={article.title}
+                    style={{
+                      width: '100%', height: '180px', objectFit: 'cover', display: 'block',
+                      cursor: 'pointer',
+                      opacity: isViewingThis ? 0 : 1,
+                    }}
+                  />
+                </div>
+              )}
               <div style={{ padding: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                   <span style={{ fontSize: '10px', fontWeight: 800, padding: '4px 8px', borderRadius: '999px', background: 'var(--app-accent-soft)', color: 'var(--app-accent)' }}>
@@ -272,8 +435,51 @@ function News({ session }) {
                       ANNOUNCEMENT
                     </span>
                   </span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{timeAgo(article.created_at)}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', flex: 1 }}>{timeAgo(article.created_at)}</span>
+
+                  <div style={{ position: 'relative' }}>
+                    <div
+                      onClick={() => setOpenMenuId(openMenuId === article.id ? null : article.id)}
+                      style={{ cursor: 'pointer', padding: '2px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Icon name="ellipsis-vertical" size={17} />
+                    </div>
+                    {openMenuId === article.id && !isViewingThis && (
+                      <div style={{
+                        position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                        background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '150px', overflow: 'hidden'
+                      }}>
+                        {isOwnArticle && (
+                          <div
+                            onClick={() => deleteArticle(article.id)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="trash-2" size={14} />
+                            Delete
+                          </div>
+                        )}
+                        {!isOwnArticle && (
+                          <div
+                            onClick={() => reportArticle(article.id)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="flag" size={14} />
+                            Report
+                          </div>
+                        )}
+                        <div
+                          onClick={() => shareArticle(article)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                        >
+                          <Icon name="share-2" size={14} />
+                          Share
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
                 <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)' }}>{article.title}</h3>
                 <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{preview}</p>
                 {article.body?.length > 140 && (
@@ -281,8 +487,17 @@ function News({ session }) {
                     {isExpanded ? 'Show less' : 'Read more'}
                   </div>
                 )}
-                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--app-border)', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Posted by {article.profiles?.full_name || 'PolyNet Admin'}
+
+                <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Posted by {article.profiles?.full_name || 'PolyNet Admin'}
+                  </span>
+                  <LikeButton
+                    isLiked={isLiked}
+                    count={likeCounts[article.id] || 0}
+                    pulseKey={likePulse[article.id] || 0}
+                    onClick={() => toggleLike(article.id)}
+                  />
                 </div>
               </div>
             </div>
@@ -290,6 +505,138 @@ function News({ session }) {
         })}
       </div>
       )}
+
+      {/* Fullscreen Image Viewer — same shared-element pattern as Feed */}
+      <AnimatePresence>
+        {viewingArticle && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(10,10,14,0.97)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+            onClick={closeImageViewer}
+          >
+            <motion.img
+              layoutId={`news-image-${viewingArticle.id}`}
+              transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+              src={viewingArticle.image_url}
+              alt={viewingArticle.title}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%', maxHeight: '100vh', objectFit: 'contain',
+              }}
+            />
+
+            {/* Top bar — back button + 3 dots, same options as the card's menu */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute', top: 0, left: 0, right: 0,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '16px 16px 40px',
+                background: 'linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)',
+              }}
+            >
+              <div
+                onClick={closeImageViewer}
+                style={{
+                  width: '38px', height: '38px', borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', cursor: 'pointer',
+                }}
+              >
+                <Icon name="arrowLeft" size={19} color="#fff" />
+              </div>
+
+              <div style={{ position: 'relative' }}>
+                <div
+                  onClick={() => setOpenMenuId(openMenuId === viewingArticle.id ? null : viewingArticle.id)}
+                  style={{
+                    width: '38px', height: '38px', borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', cursor: 'pointer',
+                  }}
+                >
+                  <Icon name="ellipsis-vertical" size={19} color="#fff" />
+                </div>
+
+                <AnimatePresence>
+                  {openMenuId === viewingArticle.id && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                      style={{
+                        position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 310,
+                        background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.35)', minWidth: '150px', overflow: 'hidden',
+                        transformOrigin: 'top right',
+                      }}
+                    >
+                      {viewingArticle.author_id === session.user.id && (
+                        <div
+                          onClick={() => deleteArticle(viewingArticle.id)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        >
+                          <Icon name="trash-2" size={14} />
+                          Delete
+                        </div>
+                      )}
+                      {viewingArticle.author_id !== session.user.id && (
+                        <div
+                          onClick={() => reportArticle(viewingArticle.id)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        >
+                          <Icon name="flag" size={14} />
+                          Report
+                        </div>
+                      )}
+                      <div
+                        onClick={() => shareArticle(viewingArticle)}
+                        style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                      >
+                        <Icon name="share-2" size={14} />
+                        Share
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+
+            {/* Bottom overlay — like button + title, still tappable in fullscreen */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                padding: '40px 20px 24px',
+                background: 'linear-gradient(to top, rgba(0,0,0,0.65), transparent)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+              }}
+            >
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>{viewingArticle.title}</span>
+              <LikeButton
+                isLiked={likedIds.has(viewingArticle.id)}
+                count={likeCounts[viewingArticle.id] || 0}
+                pulseKey={likePulse[viewingArticle.id] || 0}
+                onClick={() => toggleLike(viewingArticle.id)}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

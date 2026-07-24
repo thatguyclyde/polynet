@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { FeedSkeleton } from './Skeleton'
+import PublicProfileCard from './PublicProfileCard'
 
 const TYPE_STYLES = {
   shoutout: { label: 'Shoutout', color: 'var(--success)', bg: 'var(--app-accent-soft)', icon: 'sparkles' },
@@ -11,7 +12,7 @@ const TYPE_STYLES = {
   general: { label: 'Post', color: 'var(--text-muted)', bg: 'var(--app-accent-soft)', icon: 'message-circle' },
 }
 
-const LIKE_RED = '#ED4956' // Instagram-style heart red
+const LIKE_RED = '#ED4956'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -64,8 +65,6 @@ function Avatar({ url, name, size = 40, onClick }) {
   )
 }
 
-// The heart — Instagram-style: fills solid red and bumps on like.
-// `pulseKey` changes on every like action, forcing the keyframe animation to replay.
 function LikeButton({ isLiked, count, pulseKey, onClick }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -102,14 +101,13 @@ function CommentButton({ isOpen, count, onClick }) {
   )
 }
 
-function Feed({ session, onViewProfile }) {
+function Feed({ session, onStartChat }) {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [myAvatar, setMyAvatar] = useState(null)
 
-  // Composer panel state
   const [composerOpen, setComposerOpen] = useState(false)
-  const [composerStep, setComposerStep] = useState('choose') // 'choose' | 'text' | 'photo'
+  const [composerStep, setComposerStep] = useState('choose')
   const [newContent, setNewContent] = useState('')
   const [newType, setNewType] = useState('general')
   const [posting, setPosting] = useState(false)
@@ -118,11 +116,10 @@ function Feed({ session, onViewProfile }) {
   const [uploading, setUploading] = useState(false)
   const [showCaptionField, setShowCaptionField] = useState(false)
 
-  // Real, persisted like/comment state
   const [likedIds, setLikedIds] = useState(new Set())
-  const [likeCounts, setLikeCounts] = useState({})       // { postId: number }
-  const [commentCounts, setCommentCounts] = useState({}) // { postId: number }
-  const [likePulse, setLikePulse] = useState({})         // { postId: number } — bump animation trigger
+  const [likeCounts, setLikeCounts] = useState({})
+  const [commentCounts, setCommentCounts] = useState({})
+  const [likePulse, setLikePulse] = useState({})
 
   const [burstId, setBurstId] = useState(null)
   const [openComments, setOpenComments] = useState(null)
@@ -133,9 +130,11 @@ function Feed({ session, onViewProfile }) {
   const [openMenuId, setOpenMenuId] = useState(null)
   const [savedIds, setSavedIds] = useState(new Set())
 
-  // Fullscreen image viewer state
   const [viewingPost, setViewingPost] = useState(null)
   const tapTimer = useRef(null)
+
+  // Floating public profile card — set to a user id to show it
+  const [viewingProfileId, setViewingProfileId] = useState(null)
 
   useEffect(() => {
     fetchPosts()
@@ -196,7 +195,6 @@ function Feed({ session, onViewProfile }) {
 
   function closeComposer() {
     setComposerOpen(false)
-    // fields are reset in AnimatePresence's onExitComplete, once the close animation finishes
   }
 
   function resetComposerFields() {
@@ -246,7 +244,6 @@ function Feed({ session, onViewProfile }) {
     setPosting(false)
   }
 
-  // Persisted like toggle — optimistic UI, reverts on failure
   async function toggleLike(postId) {
     const alreadyLiked = likedIds.has(postId)
 
@@ -290,14 +287,12 @@ function Feed({ session, onViewProfile }) {
     }
   }
 
-  // Double-tap on the image only *likes* (never unlikes) — matches Instagram behavior
   function handleDoubleTap(postId) {
     if (!likedIds.has(postId)) toggleLike(postId)
     setBurstId(postId)
     setTimeout(() => setBurstId(current => (current === postId ? null : current)), 700)
   }
 
-  // Distinguishes a single tap (open fullscreen) from a double tap (like) on the image
   function handleImageTap(post) {
     if (tapTimer.current) {
       clearTimeout(tapTimer.current)
@@ -384,10 +379,26 @@ function Feed({ session, onViewProfile }) {
     setOpenMenuId(null)
   }
 
+  // Opens the floating public profile card for a post's author
+  function goToAuthor(authorId) {
+    setViewingProfileId(authorId)
+  }
+
+  // Sends a "message request" to a user from their profile card, then
+  // hands off to the Chats tab exactly like PolyMart's "Message Seller" does
+  function handleMessageUser({ id, name, avatar }) {
+    onStartChat?.({
+      listingId: null,
+      listingTitle: null,
+      sellerId: id,
+      sellerName: name,
+      sellerAvatar: avatar,
+    })
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative', overflow: 'hidden' }}>
 
-      {/* Header — just logo and name */}
       <div style={{ padding: '18px 20px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img src="/logo.png" alt="PolyNet" style={{ width: '38px', height: '38px', borderRadius: '12px', objectFit: 'contain' }} />
@@ -398,7 +409,6 @@ function Feed({ session, onViewProfile }) {
         </div>
       </div>
 
-      {/* Posts */}
       {loading ? <FeedSkeleton /> : (
       <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
         {posts.map(post => {
@@ -408,16 +418,15 @@ function Feed({ session, onViewProfile }) {
           const isLiked = likedIds.has(post.id)
           const comments = commentsByPost[post.id] || []
           const isOwnPost = post.author_id === session.user.id
-          const goToAuthor = () => onViewProfile?.(post.author_id, isOwnPost)
           const isViewingThis = viewingPost?.id === post.id
 
           return (
             <motion.div key={post.id} layout="position" style={{ borderBottom: '8px solid var(--app-border)' }}>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 16px', position: 'relative' }}>
-                <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={goToAuthor} />
+                <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={() => goToAuthor(post.author_id)} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span onClick={goToAuthor} style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer' }}>{name}</span>
+                    <span onClick={() => goToAuthor(post.author_id)} style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer' }}>{name}</span>
                     {dept && (
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{dept}</span>
                     )}
@@ -495,7 +504,7 @@ function Feed({ session, onViewProfile }) {
                     style={{
                       width: '100%', maxHeight: '420px', objectFit: 'cover', display: 'block',
                       cursor: 'pointer',
-                      opacity: isViewingThis ? 0 : 1, // hide thumbnail while its fullscreen twin is shown
+                      opacity: isViewingThis ? 0 : 1,
                     }}
                   />
                   {burstId === post.id && (
@@ -535,7 +544,7 @@ function Feed({ session, onViewProfile }) {
                     <div style={{ padding: '0 16px 14px' }}>
                       {comments.map(c => (
                         <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                          <Avatar name={c.profiles?.full_name || 'S'} size={26} />
+                          <Avatar name={c.profiles?.full_name || 'S'} size={26} onClick={() => goToAuthor(c.author_id)} />
                           <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1 }}>
                             <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)' }}>{c.profiles?.full_name || 'PolyNet Student'}</div>
                             <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px' }}>{c.content}</div>
@@ -559,7 +568,6 @@ function Feed({ session, onViewProfile }) {
       </div>
       )}
 
-      {/* Floating Action Button — purple circle, plus icon */}
       <div
         onClick={openComposer}
         style={{
@@ -576,10 +584,6 @@ function Feed({ session, onViewProfile }) {
         <Icon name="plus" size={26} />
       </div>
 
-      {/* Composer — now a centered card covering only the middle of the screen.
-          Backdrop fades at one pace; the card itself springs in from the left
-          at a distinctly different, bouncier pace. Fields reset only after the
-          exit animation fully completes. */}
       <AnimatePresence onExitComplete={resetComposerFields}>
         {composerOpen && (
           <>
@@ -598,7 +602,7 @@ function Feed({ session, onViewProfile }) {
                 position: 'fixed', inset: 0, zIndex: 160,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 padding: '40px 24px',
-                pointerEvents: 'none', // taps outside the card fall through to the backdrop
+                pointerEvents: 'none',
               }}
             >
               <motion.div
@@ -620,7 +624,6 @@ function Feed({ session, onViewProfile }) {
                   pointerEvents: 'auto',
                 }}
               >
-                {/* Panel header */}
                 <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
                   {composerStep !== 'choose' && (
                     <div onClick={() => setComposerStep('choose')} style={{ cursor: 'pointer', color: 'var(--text-strong)' }}>
@@ -636,7 +639,6 @@ function Feed({ session, onViewProfile }) {
                 </div>
 
                 <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                  {/* Step: choose */}
                   {composerStep === 'choose' && (
                     <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div
@@ -675,7 +677,6 @@ function Feed({ session, onViewProfile }) {
                     </div>
                   )}
 
-                  {/* Step: photo */}
                   {composerStep === 'photo' && (
                     <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
                       {!imagePreview ? (
@@ -757,7 +758,6 @@ function Feed({ session, onViewProfile }) {
                     </div>
                   )}
 
-                  {/* Step: text */}
                   {composerStep === 'text' && (
                     <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
                       <textarea
@@ -807,14 +807,9 @@ function Feed({ session, onViewProfile }) {
         )}
       </AnimatePresence>
 
-      {/* Fullscreen Image Viewer — shared-element "magic motion" from the thumbnail */}
       <AnimatePresence>
         {viewingPost && (
           <motion.div
-            // No fade-in on the backdrop itself — it snaps fully opaque immediately.
-            // This is what fixed the earlier flicker: previously the backdrop faded in at
-            // the same time the image was still flying across the screen, so on a slow
-            // image load you could briefly see the feed underneath through it.
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -846,7 +841,6 @@ function Feed({ session, onViewProfile }) {
               </div>
             )}
 
-            {/* Top bar — back button + 3 dots. Visible immediately; no load-gating. */}
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -939,6 +933,16 @@ function Feed({ session, onViewProfile }) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Floating public profile card */}
+      {viewingProfileId && (
+        <PublicProfileCard
+          userId={viewingProfileId}
+          session={session}
+          onClose={() => setViewingProfileId(null)}
+          onMessage={handleMessageUser}
+        />
+      )}
 
       <style>{`
         @keyframes fadeIn {
