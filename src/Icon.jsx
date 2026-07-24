@@ -5,10 +5,9 @@ import {
   MapPin, Calendar, ShoppingBag, Newspaper, Zap, Star, Flag,
   Globe, MessageSquare, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,
   MoreHorizontal, MoreVertical, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
-  Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox
+  Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox, BookOpen
 } from 'lucide-react'
 
-// Custom brand icons — Lucide no longer ships these, so we draw them ourselves
 function TikTokIcon({ size, color }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -110,10 +109,11 @@ const ICONS = {
   users: Users,
   heart: Heart,
   comment: MessageCircle,
-  'message-circle': MessageCircle, // alias — some components call it this way
+  'message-circle': MessageCircle,
   share: Share2,
   'share-2': Share2,
   bookmark: Bookmark,
+  book: BookOpen,
   download: Download,
   bell: Bell,
   settings: Settings,

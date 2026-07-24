@@ -5,11 +5,9 @@ import Icon from './Icon'
 import { FeedSkeleton } from './Skeleton'
 import PublicProfileCard from './PublicProfileCard'
 
-const TYPE_STYLES = {
-  shoutout: { label: 'Shoutout', color: 'var(--success)', bg: 'var(--app-accent-soft)', icon: 'sparkles' },
-  event: { label: 'Event', color: 'var(--app-accent)', bg: 'var(--app-accent-soft)', icon: 'newspaper' },
-  opportunity: { label: 'Opportunity', color: '#d97706', bg: 'var(--app-accent-soft)', icon: 'store' },
-  general: { label: 'Post', color: 'var(--text-muted)', bg: 'var(--app-accent-soft)', icon: 'message-circle' },
+const CATEGORY_STYLES = {
+  school: { label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
+  other: { label: 'Other', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
 }
 
 const LIKE_RED = '#ED4956'
@@ -22,10 +20,7 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-// Middle-truncates long strings — keeps the start and a bit of the end,
-// replaces the middle with an ellipsis. Reads better than a plain cutoff
-// for long department names like "Applied Arts (Clothing Technology...)".
-function middleTruncate(str, maxChars = 20) {
+function middleTruncate(str, maxChars = 24) {
   if (!str || str.length <= maxChars) return str
   const keepStart = Math.ceil((maxChars - 1) * 0.62)
   const keepEnd = Math.floor((maxChars - 1) * 0.38)
@@ -75,6 +70,8 @@ function Avatar({ url, name, size = 40, onClick }) {
   )
 }
 
+// Middle-sized like button — between the original compact version and the
+// oversized Instagram-scale one.
 function LikeButton({ isLiked, count, pulseKey, onClick }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -88,12 +85,12 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
       >
         <Icon
           name="heart"
-          size={18}
+          size={22}
           color={isLiked ? LIKE_RED : 'var(--text-muted)'}
           fill={isLiked ? LIKE_RED : 'none'}
         />
       </motion.div>
-      <span style={{ fontWeight: 700, fontSize: '12px', color: isLiked ? LIKE_RED : 'var(--text-muted)' }}>
+      <span style={{ fontWeight: 700, fontSize: '13px', color: isLiked ? LIKE_RED : 'var(--text-muted)' }}>
         {count > 0 ? count : 'Like'}
       </span>
     </div>
@@ -103,8 +100,8 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
 function CommentButton({ isOpen, count, onClick }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-      <Icon name="comment" size={17} color={isOpen ? 'var(--app-accent)' : 'var(--text-muted)'} />
-      <span style={{ fontWeight: 700, fontSize: '12px', color: isOpen ? 'var(--app-accent)' : 'var(--text-muted)' }}>
+      <Icon name="comment" size={22} color={isOpen ? 'var(--app-accent)' : 'var(--text-muted)'} />
+      <span style={{ fontWeight: 700, fontSize: '13px', color: isOpen ? 'var(--app-accent)' : 'var(--text-muted)' }}>
         {count > 0 ? count : 'Comment'}
       </span>
     </div>
@@ -119,7 +116,7 @@ function Feed({ session, onStartChat }) {
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerStep, setComposerStep] = useState('choose')
   const [newContent, setNewContent] = useState('')
-  const [newType, setNewType] = useState('general')
+  const [newCategory, setNewCategory] = useState('school')
   const [posting, setPosting] = useState(false)
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
@@ -209,7 +206,7 @@ function Feed({ session, onStartChat }) {
   function resetComposerFields() {
     setComposerStep('choose')
     setNewContent('')
-    setNewType('general')
+    setNewCategory('school')
     setImageFile(null)
     setImagePreview(null)
     setShowCaptionField(false)
@@ -242,7 +239,7 @@ function Feed({ session, onStartChat }) {
     const { error } = await supabase.from('feed_posts').insert({
       author_id: session.user.id,
       content: newContent,
-      post_type: newType,
+      post_type: newCategory,
       image_url: imageUrl,
     })
 
@@ -418,9 +415,9 @@ function Feed({ session, onStartChat }) {
       {loading ? <FeedSkeleton /> : (
       <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
         {posts.map(post => {
-          const type = TYPE_STYLES[post.post_type] || TYPE_STYLES.general
           const name = post.profiles?.full_name || 'PolyNet Student'
           const dept = post.profiles?.department || ''
+          const isSchoolRelated = post.post_type === 'school'
           const isLiked = likedIds.has(post.id)
           const comments = commentsByPost[post.id] || []
           const isOwnPost = post.author_id === session.user.id
@@ -428,20 +425,21 @@ function Feed({ session, onStartChat }) {
 
           return (
             <motion.div key={post.id} layout="position" style={{ borderBottom: '8px solid var(--app-border)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 16px', position: 'relative' }}>
+              <div style={{
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                padding: '12px 16px 10px', position: 'relative',
+                borderBottom: '1px solid var(--app-border-soft)',
+              }}>
                 <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={() => goToAuthor(post.author_id)} />
 
-                {/* Name + department + type badge — forced onto a single line.
-                    Name and department can each shrink and truncate; the badge
-                    never shrinks, so it's always fully visible. */}
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'nowrap' }}>
                   <span
                     onClick={() => goToAuthor(post.author_id)}
                     title={name}
                     style={{
                       fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      flexShrink: 1, minWidth: '30px', maxWidth: '48%',
+                      flexShrink: 1, minWidth: '68px', maxWidth: '62%',
                     }}
                   >
                     {name}
@@ -455,15 +453,14 @@ function Feed({ session, onStartChat }) {
                         flexShrink: 1, minWidth: 0,
                       }}
                     >
-                      {middleTruncate(dept, 20)}
+                      {middleTruncate(dept, 24)}
                     </span>
                   )}
-                  <span style={{
-                    padding: '3px 7px', borderRadius: '999px', fontSize: '9.5px', fontWeight: 700,
-                    color: type.color, background: type.bg, flexShrink: 0, whiteSpace: 'nowrap',
-                  }}>
-                    {type.label}
-                  </span>
+                  {isSchoolRelated && (
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }} title="School related">
+                      <Icon name="book" size={14} color="var(--success)" />
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
@@ -520,7 +517,7 @@ function Feed({ session, onStartChat }) {
               </div>
 
               {post.content && (
-                <div style={{ margin: '6px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
+                <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
                   <span>{post.content}</span>
                 </div>
               )}
@@ -540,15 +537,15 @@ function Feed({ session, onStartChat }) {
                   />
                   {burstId === post.id && (
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                      <div style={{ color: '#fff', filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
-                        <Icon name="heart" size={72} strokeWidth={0} color="#fff" fill="#fff" />
+                      <div style={{ filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
+                        <Icon name="heart" size={72} strokeWidth={0} color={LIKE_RED} fill={LIKE_RED} />
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '18px', padding: post.image_url ? '10px 16px 0' : '0 16px' }}>
+              <div style={{ display: 'flex', gap: '20px', padding: post.image_url ? '10px 16px 0' : '2px 16px 0' }}>
                 <LikeButton
                   isLiked={isLiked}
                   count={likeCounts[post.id] || 0}
@@ -572,7 +569,7 @@ function Feed({ session, onStartChat }) {
                     transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.7 }}
                     style={{ overflow: 'hidden' }}
                   >
-                    <div style={{ padding: '0 16px 14px' }}>
+                    <div style={{ padding: '10px 16px 14px' }}>
                       {comments.map(c => (
                         <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                           <Avatar name={c.profiles?.full_name || 'S'} size={26} onClick={() => goToAuthor(c.author_id)} />
@@ -761,12 +758,12 @@ function Feed({ session, onStartChat }) {
                             />
                           )}
 
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
-                            {Object.entries(TYPE_STYLES).map(([key, value]) => (
-                              <div key={key} onClick={() => setNewType(key)} style={{
-                                padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
-                                cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
-                                background: newType === key ? value.bg : 'transparent', color: value.color,
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                            {Object.entries(CATEGORY_STYLES).map(([key, value]) => (
+                              <div key={key} onClick={() => setNewCategory(key)} style={{
+                                flex: 1, textAlign: 'center', padding: '10px 8px', borderRadius: '14px', fontSize: '12.5px', fontWeight: 700,
+                                cursor: 'pointer', border: newCategory === key ? `1.5px solid ${value.color}` : '1.5px solid var(--app-border-soft)',
+                                background: newCategory === key ? value.bg : 'transparent', color: newCategory === key ? value.color : 'var(--text-muted)',
                               }}>
                                 {value.label}
                               </div>
@@ -805,12 +802,12 @@ function Feed({ session, onStartChat }) {
                         }}
                       />
 
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '14px' }}>
-                        {Object.entries(TYPE_STYLES).map(([key, value]) => (
-                          <div key={key} onClick={() => setNewType(key)} style={{
-                            padding: '6px 10px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
-                            cursor: 'pointer', border: newType === key ? `1px solid ${value.color}` : '1px solid var(--app-border-soft)',
-                            background: newType === key ? value.bg : 'transparent', color: value.color,
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                        {Object.entries(CATEGORY_STYLES).map(([key, value]) => (
+                          <div key={key} onClick={() => setNewCategory(key)} style={{
+                            flex: 1, textAlign: 'center', padding: '10px 8px', borderRadius: '14px', fontSize: '12.5px', fontWeight: 700,
+                            cursor: 'pointer', border: newCategory === key ? `1.5px solid ${value.color}` : '1.5px solid var(--app-border-soft)',
+                            background: newCategory === key ? value.bg : 'transparent', color: newCategory === key ? value.color : 'var(--text-muted)',
                           }}>
                             {value.label}
                           </div>
@@ -866,8 +863,8 @@ function Feed({ session, onStartChat }) {
 
             {burstId === viewingPost.id && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                <div style={{ color: '#fff', filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
-                  <Icon name="heart" size={90} strokeWidth={0} color="#fff" fill="#fff" />
+                <div style={{ filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
+                  <Icon name="heart" size={90} strokeWidth={0} color={LIKE_RED} fill={LIKE_RED} />
                 </div>
               </div>
             )}
