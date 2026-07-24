@@ -400,23 +400,36 @@ function Feed({ session, onStartChat }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative', overflow: 'hidden' }}>
 
-      {/* Header — "PolyNet" wordmark only, fancy display font, purple gradient */}
-      <div style={{ padding: '18px 20px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
+      {/* Header — "PolyNet" wordmark only, left-aligned, unique display font,
+          dark-leaning purple gradient. No hard border — the header floats
+          over the feed with a frosted blur instead of a dividing line. */}
+      <div style={{
+        padding: '18px 20px 16px',
+        background: 'color-mix(in srgb, var(--card-bg) 72%, transparent)',
+        backdropFilter: 'blur(14px)',
+        WebkitBackdropFilter: 'blur(14px)',
+        position: 'sticky', top: 0, zIndex: 20,
+        boxShadow: '0 10px 24px -16px rgba(0,0,0,0.18)',
+      }}>
         <h1 style={{
           margin: 0,
-          fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
-          fontSize: '26px',
-          fontWeight: 800,
-          letterSpacing: '-0.5px',
-          background: 'linear-gradient(135deg, #7C3AED 0%, #A855F7 50%, #C084FC 100%)',
+          fontFamily: "'Righteous', -apple-system, BlinkMacSystemFont, sans-serif",
+          fontSize: '25px',
+          fontWeight: 400,
+          letterSpacing: '-0.3px',
+          background: 'linear-gradient(135deg, #4C1D95 0%, #7C3AED 55%, #9333EA 100%)',
           WebkitBackgroundClip: 'text',
           backgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           color: 'transparent',
           display: 'inline-block',
+          textAlign: 'left',
         }}>
           PolyNet
         </h1>
+        <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+          Harare Poly
+        </p>
       </div>
 
       {loading ? <FeedSkeleton /> : (
@@ -979,7 +992,7 @@ function Feed({ session, onStartChat }) {
       )}
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Righteous&display=swap');
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }

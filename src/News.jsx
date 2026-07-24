@@ -5,6 +5,7 @@ import Icon from './Icon'
 import { NewsSkeleton } from './Skeleton'
 
 const LIKE_ACCENT = 'var(--app-accent)'
+const VERIFIED_BLUE = '#1D9BF0'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -38,8 +39,21 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
   })
 }
 
-// Thumbs-up like button — fills solid accent and bumps on like, same
-// mechanism as Feed's heart: pulseKey forces the keyframe to replay.
+// Small blue verified badge, same visual language as X/Instagram checkmarks
+function VerifiedBadge({ size = 13 }) {
+  return (
+    <span
+      title="Verified"
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: size, height: size, borderRadius: '50%', background: VERIFIED_BLUE, flexShrink: 0,
+      }}
+    >
+      <Icon name="check" size={size * 0.62} color="#fff" strokeWidth={3} />
+    </span>
+  )
+}
+
 function LikeButton({ isLiked, count, pulseKey, onClick }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -68,22 +82,23 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
 function News({ session }) {
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showComposer, setShowComposer] = useState(false)
+  const [expandedId, setExpandedId] = useState(null)
+  const [isAdmin, setIsAdmin] = useState(true)
+
+  // Composer: choose -> announcement (headline + story) OR image (photo + caption)
+  const [composerOpen, setComposerOpen] = useState(false)
+  const [composerStep, setComposerStep] = useState('choose')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [posting, setPosting] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [expandedId, setExpandedId] = useState(null)
-  const [isAdmin, setIsAdmin] = useState(true)
 
-  // Real, persisted likes
   const [likedIds, setLikedIds] = useState(new Set())
   const [likeCounts, setLikeCounts] = useState({})
   const [likePulse, setLikePulse] = useState({})
 
-  // 3-dot menu + fullscreen image viewer
   const [openMenuId, setOpenMenuId] = useState(null)
   const [viewingArticle, setViewingArticle] = useState(null)
   const tapTimer = useRef(null)
@@ -137,7 +152,8 @@ function News({ session }) {
   }
 
   async function handlePost() {
-    if (!title.trim()) return
+    if (composerStep === 'announcement' && !title.trim()) return
+    if (composerStep === 'image' && !imageFile) return
     setPosting(true)
 
     let imageUrl = null
@@ -150,7 +166,14 @@ function News({ session }) {
       }
     }
 
-    const { error } = await supabase.from('news_articles').insert({ author_id: session.user.id, title, body, image_url: imageUrl })
+    const finalTitle = composerStep === 'announcement' ? title.trim() : ''
+
+    const { error } = await supabase.from('news_articles').insert({
+      author_id: session.user.id,
+      title: finalTitle,
+      body,
+      image_url: imageUrl,
+    })
 
     if (!error) {
       closeComposer()
@@ -160,21 +183,22 @@ function News({ session }) {
   }
 
   function openComposer() {
-    setShowComposer(true)
+    setComposerOpen(true)
+    setComposerStep('choose')
   }
 
   function closeComposer() {
-    setShowComposer(false)
+    setComposerOpen(false)
   }
 
   function resetComposerFields() {
+    setComposerStep('choose')
     setTitle('')
     setBody('')
     setImageFile(null)
     setImagePreview(null)
   }
 
-  // Persisted like toggle — optimistic UI, reverts on failure
   async function toggleLike(articleId) {
     const alreadyLiked = likedIds.has(articleId)
 
@@ -218,7 +242,6 @@ function News({ session }) {
     }
   }
 
-  // Distinguish single tap (fullscreen) from a would-be double tap on the image
   function handleImageTap(article) {
     if (tapTimer.current) {
       clearTimeout(tapTimer.current)
@@ -254,7 +277,7 @@ function News({ session }) {
 
   function shareArticle(article) {
     if (navigator.share) {
-      navigator.share({ title: article.title, text: 'Check out this update on PolyNet' })
+      navigator.share({ title: article.title || 'PolyNet News', text: 'Check out this update on PolyNet' })
     } else {
       alert('Article link copied to clipboard!')
       navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#article-${article.id}`)
@@ -274,7 +297,6 @@ function News({ session }) {
         </div>
       </div>
 
-      {/* Floating Action Button — purple circle, plus icon */}
       {isAdmin && (
         <div
           onClick={openComposer}
@@ -293,9 +315,9 @@ function News({ session }) {
         </div>
       )}
 
-      {/* Composer — centered card, same pattern as Feed/PolyMart */}
+      {/* Composer — centered card. Choose step offers Announcement vs Image. */}
       <AnimatePresence onExitComplete={resetComposerFields}>
-        {showComposer && (
+        {composerOpen && (
           <>
             <motion.div
               key="news-composer-backdrop"
@@ -335,65 +357,148 @@ function News({ session }) {
                 }}
               >
                 <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  {composerStep !== 'choose' && (
+                    <div onClick={() => setComposerStep('choose')} style={{ cursor: 'pointer', color: 'var(--text-strong)' }}>
+                      <Icon name="arrowLeft" size={20} />
+                    </div>
+                  )}
                   <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
-                    New Article
+                    {composerStep === 'choose' ? 'New Post' : composerStep === 'announcement' ? 'Announcement' : 'Add Image'}
                   </h2>
                   <div onClick={closeComposer} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
                     <Icon name="x" size={20} />
                   </div>
                 </div>
 
-                <div style={{ overflowY: 'auto', flex: 1, padding: '20px' }}>
-                  <input
-                    value={title}
-                    onChange={e => setTitle(e.target.value)}
-                    placeholder="Headline..."
-                    style={{
-                      width: '100%', padding: '12px', borderRadius: '14px',
-                      border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
-                      color: 'var(--text-strong)', boxSizing: 'border-box', outline: 'none',
-                      fontSize: '14px', marginBottom: '10px',
-                    }}
-                  />
-                  <textarea
-                    value={body}
-                    onChange={e => setBody(e.target.value)}
-                    placeholder="Write the announcement..."
-                    rows={4}
-                    style={{
-                      width: '100%', padding: '12px', borderRadius: '14px',
-                      border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
-                      color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
-                      outline: 'none', fontFamily: 'inherit', fontSize: '13.5px', marginBottom: '10px',
-                    }}
-                  />
+                <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  {composerStep === 'choose' && (
+                    <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div
+                        onClick={() => setComposerStep('announcement')}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
+                          borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
+                          cursor: 'pointer', background: 'var(--page-bg)',
+                        }}
+                      >
+                        <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon name="newspaper" size={20} color="var(--app-accent)" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Announcement</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Write a headline and a story</div>
+                        </div>
+                      </div>
 
-                  {imagePreview && (
-                    <div style={{ position: 'relative', marginBottom: '10px' }}>
-                      <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '14px' }} />
-                      <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                        <Icon name="x" size={14} />
+                      <div
+                        onClick={() => setComposerStep('image')}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
+                          borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
+                          cursor: 'pointer', background: 'var(--page-bg)',
+                        }}
+                      >
+                        <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon name="camera" size={20} color="var(--app-accent)" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Image</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Post a picture with a caption</div>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  <label style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--app-accent-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--app-accent)' }}>
-                    <Icon name="camera" size={16} />
-                    <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
-                  </label>
+                  {composerStep === 'announcement' && (
+                    <div style={{ padding: '20px' }}>
+                      <input
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        placeholder="Headline..."
+                        style={{
+                          width: '100%', padding: '12px', borderRadius: '14px',
+                          border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                          color: 'var(--text-strong)', boxSizing: 'border-box', outline: 'none',
+                          fontSize: '14px', marginBottom: '10px',
+                        }}
+                      />
+                      <textarea
+                        value={body}
+                        onChange={e => setBody(e.target.value)}
+                        placeholder="Write the story..."
+                        rows={6}
+                        style={{
+                          width: '100%', padding: '12px', borderRadius: '14px',
+                          border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                          color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
+                          outline: 'none', fontFamily: 'inherit', fontSize: '13.5px',
+                        }}
+                      />
 
-                  <button
-                    onClick={handlePost}
-                    disabled={posting || uploading || !title.trim()}
-                    style={{
-                      width: '100%', marginTop: '16px', padding: '13px', borderRadius: '14px',
-                      border: 'none', background: title.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
-                      color: '#fff', fontWeight: 700, fontSize: '14.5px',
-                      cursor: title.trim() ? 'pointer' : 'default', marginBottom: '4px',
-                    }}
-                  >
-                    {uploading ? 'Processing...' : posting ? 'Publishing...' : 'Publish Article'}
-                  </button>
+                      <button
+                        onClick={handlePost}
+                        disabled={posting || !title.trim()}
+                        style={{
+                          width: '100%', marginTop: '16px', padding: '13px', borderRadius: '14px',
+                          border: 'none', background: title.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
+                          color: '#fff', fontWeight: 700, fontSize: '14.5px',
+                          cursor: title.trim() ? 'pointer' : 'default', marginBottom: '4px',
+                        }}
+                      >
+                        {posting ? 'Publishing...' : 'Publish Announcement'}
+                      </button>
+                    </div>
+                  )}
+
+                  {composerStep === 'image' && (
+                    <div style={{ padding: '20px' }}>
+                      {!imagePreview ? (
+                        <label style={{
+                          minHeight: '180px', borderRadius: '16px',
+                          border: '2px dashed var(--app-border-soft)', display: 'flex',
+                          flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                          gap: '10px', cursor: 'pointer', color: 'var(--text-muted)',
+                        }}>
+                          <Icon name="imagePlus" size={30} color="var(--app-accent)" />
+                          <span style={{ fontSize: '13.5px', fontWeight: 600 }}>{uploading ? 'Processing...' : 'Tap to select a photo'}</span>
+                          <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+                        </label>
+                      ) : (
+                        <div style={{ position: 'relative', marginBottom: '10px' }}>
+                          <img src={imagePreview} alt="preview" style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '16px' }} />
+                          <div onClick={() => { setImageFile(null); setImagePreview(null) }} style={{ position: 'absolute', top: '8px', right: '8px', width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                            <Icon name="x" size={14} />
+                          </div>
+                        </div>
+                      )}
+
+                      <textarea
+                        value={body}
+                        onChange={e => setBody(e.target.value)}
+                        placeholder="Write a caption..."
+                        rows={3}
+                        style={{
+                          width: '100%', marginTop: '10px', padding: '12px', borderRadius: '14px',
+                          border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
+                          color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
+                          outline: 'none', fontFamily: 'inherit', fontSize: '13.5px',
+                        }}
+                      />
+
+                      <button
+                        onClick={handlePost}
+                        disabled={posting || uploading || !imageFile}
+                        style={{
+                          width: '100%', marginTop: '16px', padding: '13px', borderRadius: '14px',
+                          border: 'none', background: imageFile ? 'var(--app-accent)' : 'var(--app-border-soft)',
+                          color: '#fff', fontWeight: 700, fontSize: '14.5px',
+                          cursor: imageFile ? 'pointer' : 'default', marginBottom: '4px',
+                        }}
+                      >
+                        {uploading ? 'Processing...' : posting ? 'Publishing...' : 'Publish Image'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             </div>
@@ -409,6 +514,7 @@ function News({ session }) {
           const isOwnArticle = article.author_id === session.user.id
           const isLiked = likedIds.has(article.id)
           const isViewingThis = viewingArticle?.id === article.id
+          const posterName = article.profiles?.full_name || 'PolyNet Admin'
 
           return (
             <div key={article.id} style={{ background: 'var(--card-bg)', borderRadius: '22px', border: '1px solid var(--app-border)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
@@ -418,7 +524,7 @@ function News({ session }) {
                     layoutId={`news-image-${article.id}`}
                     onClick={() => handleImageTap(article)}
                     src={article.image_url}
-                    alt={article.title}
+                    alt={article.title || 'News image'}
                     style={{
                       width: '100%', height: '180px', objectFit: 'cover', display: 'block',
                       cursor: 'pointer',
@@ -435,7 +541,7 @@ function News({ session }) {
                       ANNOUNCEMENT
                     </span>
                   </span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', flex: 1 }}>{timeAgo(article.created_at)}</span>
+                  <div style={{ flex: 1 }} />
 
                   <div style={{ position: 'relative' }}>
                     <div
@@ -480,18 +586,30 @@ function News({ session }) {
                   </div>
                 </div>
 
-                <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)' }}>{article.title}</h3>
-                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{preview}</p>
-                {article.body?.length > 140 && (
-                  <div onClick={() => setExpandedId(isExpanded ? null : article.id)} style={{ marginTop: '8px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}>
-                    {isExpanded ? 'Show less' : 'Read more'}
-                  </div>
+                {article.title && (
+                  <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)' }}>{article.title}</h3>
+                )}
+                {article.body && (
+                  <>
+                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{preview}</p>
+                    {article.body.length > 140 && (
+                      <div onClick={() => setExpandedId(isExpanded ? null : article.id)} style={{ marginTop: '8px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}>
+                        {isExpanded ? 'Show less' : 'Read more'}
+                      </div>
+                    )}
+                  </>
                 )}
 
-                <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Posted by {article.profiles?.full_name || 'PolyNet Admin'}
-                  </span>
+                <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Posted by {posterName}</span>
+                      <VerifiedBadge size={13} />
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {timeAgo(article.created_at)}
+                    </div>
+                  </div>
                   <LikeButton
                     isLiked={isLiked}
                     count={likeCounts[article.id] || 0}
@@ -506,7 +624,7 @@ function News({ session }) {
       </div>
       )}
 
-      {/* Fullscreen Image Viewer — same shared-element pattern as Feed */}
+      {/* Fullscreen Image Viewer */}
       <AnimatePresence>
         {viewingArticle && (
           <motion.div
@@ -525,14 +643,13 @@ function News({ session }) {
               layoutId={`news-image-${viewingArticle.id}`}
               transition={{ type: 'spring', stiffness: 260, damping: 28 }}
               src={viewingArticle.image_url}
-              alt={viewingArticle.title}
+              alt={viewingArticle.title || 'News image'}
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: '100%', maxHeight: '100vh', objectFit: 'contain',
               }}
             />
 
-            {/* Top bar — back button + 3 dots, same options as the card's menu */}
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -616,7 +733,6 @@ function News({ session }) {
               </div>
             </motion.div>
 
-            {/* Bottom overlay — like button + title, still tappable in fullscreen */}
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -626,7 +742,9 @@ function News({ session }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
               }}
             >
-              <span style={{ color: '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>{viewingArticle.title}</span>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>
+                {viewingArticle.title || viewingArticle.body || 'PolyNet News'}
+              </span>
               <LikeButton
                 isLiked={likedIds.has(viewingArticle.id)}
                 count={likeCounts[viewingArticle.id] || 0}

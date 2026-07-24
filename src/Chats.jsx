@@ -1,387 +1,435 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Newspaper, Store, MessageCircle, UserCircle } from 'lucide-react'
 import { supabase } from './supabase'
-import SplashScreen from './SplashScreen'
-import SignUp from './SignUp'
-import Onboarding from './Onboarding'
-import Feed from './Feed'
-import News from './News'
-import Polymart from './Polymart'
-import Profile from './Profile'
-import Chats from './Chats'
+import Icon from './Icon'
+import PublicProfileCard from './PublicProfileCard'
 
-const TABS = [
-  { id: 'feed', icon: Home, label: 'Home' },
-  { id: 'news', icon: Newspaper, label: 'News' },
-  { id: 'polymart', icon: Store, label: 'Polymart' },
-  { id: 'chats', icon: MessageCircle, label: 'Chats' },
-]
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
 
-function ComingSoonDots() {
+function InitialsAvatar({ name, url, size = 44, onClick }) {
+  const initials = (name || 'S').split(' ').map(n => n[0]).slice(0, 2).join('')
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', gap: '10px' }}>
-        {[0, 1, 2].map((i) => (
-          <div key={i} style={{
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            background: '#7C3AED',
-            animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-          }} />
-        ))}
-      </div>
-      <style>{`
-        @keyframes dotPulse {
-          0%, 100% { opacity: 0.2; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1.2); }
-        }
-      `}</style>
+    <div
+      onClick={onClick}
+      style={{
+        width: size, height: size, borderRadius: '50%', flexShrink: 0, overflow: 'hidden',
+        background: 'var(--app-accent-soft)', color: 'var(--app-accent)', fontWeight: 700,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.36,
+        cursor: onClick ? 'pointer' : 'default',
+      }}
+    >
+      {url ? (
+        <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        initials
+      )}
     </div>
   )
 }
 
-function App() {
-  const [splash, setSplash] = useState(true)
-  const [session, setSession] = useState(null)
-  const [onboarded, setOnboarded] = useState(false)
-  const [checking, setChecking] = useState(true)
-  const [page, setPage] = useState('feed')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const [authView, setAuthView] = useState('login')
-  const [showProfile, setShowProfile] = useState(false)
-  const [myAvatar, setMyAvatar] = useState(null)
+// A conversation's initial status is 'pending' unless it's a self-chat, in which
+// case there's no one to "request" — it's accepted immediately.
+async function findOrCreateConversation(session, pendingChat) {
+  const { listingId = null, sellerId, listingTitle = null, sellerName, sellerAvatar = null } = pendingChat
+  const myId = session.user.id
+  const isSelfChat = sellerId === myId
 
-  const [pendingChat, setPendingChat] = useState(null)
+  let query = supabase
+    .from('conversations')
+    .select('id, listing_id, buyer_id, seller_id, status, last_message_at')
+
+  if (listingId) {
+    query = query.eq('listing_id', listingId).eq('buyer_id', myId)
+  } else {
+    query = query
+      .is('listing_id', null)
+      .or(`and(buyer_id.eq.${myId},seller_id.eq.${sellerId}),and(buyer_id.eq.${sellerId},seller_id.eq.${myId})`)
+  }
+
+  const { data: existing, error: fetchErr } = await query.maybeSingle()
+
+  if (fetchErr) {
+    console.error('Error checking for existing conversation:', fetchErr.message)
+    return { error: true }
+  }
+
+  let conversation = existing
+  if (!conversation) {
+    const { data: created, error: insertErr } = await supabase
+      .from('conversations')
+      .insert({
+        listing_id: listingId,
+        buyer_id: myId,
+        seller_id: sellerId,
+        status: isSelfChat ? 'accepted' : 'pending',
+      })
+      .select('id, listing_id, buyer_id, seller_id, status, last_message_at')
+      .single()
+
+    if (insertErr) {
+      console.error('Error creating conversation:', insertErr.message)
+      return { error: true }
+    }
+    conversation = created
+  }
+  if (!conversation) return { error: true }
+
+  return {
+    id: conversation.id,
+    listingTitle,
+    listingImage: null,
+    otherName: isSelfChat ? 'You' : (sellerName || 'PolyNet Student'),
+    otherAvatar: isSelfChat ? null : sellerAvatar,
+    otherUserId: sellerId,
+    status: conversation.status,
+    buyerId: conversation.buyer_id,
+    sellerId: conversation.seller_id,
+  }
+}
+
+function Inbox({ session, onOpenThread, onBack }) {
+  const [conversations, setConversations] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const checkUserProfile = async (userSession) => {
-      if (!userSession) {
-        setChecking(false)
-        return
-      }
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name, department, year_of_study, avatar_url')
-          .eq('id', userSession.user.id)
-          .maybeSingle()
-
-        if (data && data.full_name && data.department && data.year_of_study) {
-          setOnboarded(true)
-        } else {
-          setOnboarded(false)
-        }
-        if (data?.avatar_url) setMyAvatar(data.avatar_url)
-      } catch (err) {
-        console.error('Error fetching profile:', err)
-      } finally {
-        setChecking(false)
-      }
-    }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      checkUserProfile(session)
-    })
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      if (session) {
-        checkUserProfile(session)
-      } else {
-        setOnboarded(false)
-        setChecking(false)
-      }
-    })
-
-    return () => listener.subscription.unsubscribe()
+    fetchConversations()
   }, [])
 
-  const handleLogin = async (e) => {
-    e.preventDefault()
+  async function fetchConversations() {
     setLoading(true)
-    setMessage('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setMessage(error.message)
+    const { data, error } = await supabase
+      .from('conversations')
+      .select(`
+        id, listing_id, buyer_id, seller_id, status, last_message, last_message_at, created_at,
+        listing:marketplace_listings(id, title, image_url),
+        buyer:profiles!conversations_buyer_id_fkey(full_name, avatar_url),
+        seller:profiles!conversations_seller_id_fkey(full_name, avatar_url)
+      `)
+      .or(`buyer_id.eq.${session.user.id},seller_id.eq.${session.user.id}`)
+      .order('last_message_at', { ascending: false })
+    if (error) console.error('Error fetching conversations:', error.message)
+    setConversations(data || [])
     setLoading(false)
   }
 
-  const handleSignUp = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setMessage('')
-    const { error } = await supabase.auth.signUp({ email, password })
-    if (error) {
-      setMessage(error.message)
-    } else {
-      setMessage('Check your email to confirm your account!')
-    }
-    setLoading(false)
+  function openThread(c) {
+    const isSelfChat = c.buyer_id === c.seller_id
+    const isBuyer = c.buyer_id === session.user.id
+    const otherProfile = isSelfChat ? (isBuyer ? c.buyer : c.seller) : (isBuyer ? c.seller : c.buyer)
+    onOpenThread({
+      id: c.id,
+      listingTitle: c.listing?.title || null,
+      listingImage: c.listing?.image_url || null,
+      otherName: isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student'),
+      otherAvatar: isSelfChat ? null : (otherProfile?.avatar_url || null),
+      otherUserId: isBuyer ? c.seller_id : c.buyer_id,
+      status: c.status,
+      buyerId: c.buyer_id,
+      sellerId: c.seller_id,
+    })
   }
 
-  function handleTabClick(targetId) {
-    if (navigator.vibrate) navigator.vibrate(8)
-    setPage(targetId)
-  }
-
-  function handleDragEnd(event, info) {
-    const threshold = 90
-    const currentIndex = TABS.findIndex(t => t.id === page)
-
-    if (info.offset.x < -threshold && currentIndex < TABS.length - 1) {
-      setPage(TABS[currentIndex + 1].id)
-    } else if (info.offset.x > threshold && currentIndex > 0) {
-      setPage(TABS[currentIndex - 1].id)
-    }
-  }
-
-  function handleStartChat(chatDetails) {
-    setPendingChat(chatDetails)
-    setPage('chats')
-  }
-
-  if (splash) return <SplashScreen onDone={() => setSplash(false)} />
-  if (checking) return <ComingSoonDots />
-
-  if (session && !onboarded) {
-    return <Onboarding session={session} onComplete={() => setOnboarded(true)} />
-  }
-
-  if (!session && authView === 'signup') {
-    return <SignUp onSwitchToLogin={() => setAuthView('login')} />
-  }
-
-  if (session && onboarded) {
-    return (
-      <div style={{
-        background: '#ffffff',
-        minHeight: '100vh',
-        fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
-        <style>{`
-          @keyframes dotPulse {
-            0%, 100% { opacity: 0.2; transform: scale(0.8); }
-            50% { opacity: 1; transform: scale(1.2); }
-          }
-        `}</style>
-
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
-          display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
-          pointerEvents: 'none',
-        }}>
-          <motion.div
-            whileTap={{ scale: 0.85 }}
-            onClick={() => setShowProfile(true)}
-            style={{
-              width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
-              background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', pointerEvents: 'auto',
-              border: '2px solid #fff', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-            }}
-          >
-            {myAvatar ? (
-              <img src={myAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <UserCircle size={22} color="#7C3AED" />
-            )}
-          </motion.div>
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+      <div style={{ padding: '18px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
+          <Icon name="chevronLeft" size={20} />
         </div>
+        <span style={{ fontWeight: 700, fontSize: '17px', color: 'var(--text-strong)' }}>Chats</span>
+      </div>
 
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: '70px' }}>
-          <motion.div
-            key={page}
-            drag="x"
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.65}
-            onDragEnd={handleDragEnd}
-            animate={{ x: 0 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 38 }}
-            style={{
-              width: '100%', height: '100%', overflowY: 'auto', touchAction: 'pan-y',
-            }}
-          >
-            {page === 'feed' && <Feed session={session} onStartChat={handleStartChat} />}
-            {page === 'news' && <News session={session} />}
-            {page === 'polymart' && <Polymart session={session} onMessageSeller={handleStartChat} />}
-            {page === 'chats' && (
-              <Chats 
-                session={session} 
-                pendingChat={pendingChat} 
-                onClearPending={() => setPendingChat(null)} 
-                onBack={() => setPage('feed')} 
-              />
-            )}
-          </motion.div>
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
+          </div>
         </div>
-
-        <div style={{
-          position: 'fixed',
-          bottom: 0, left: 0, right: 0,
-          background: '#ffffff',
-          borderTop: '1px solid #F0EEFF',
-          display: 'flex',
-          padding: '10px 0 18px',
-          zIndex: 100,
-          boxShadow: '0 -4px 20px rgba(124,58,237,0.06)',
-        }}>
-          {TABS.map(tab => {
-            const isActive = page === tab.id
-            const IconComponent = tab.icon
+      ) : conversations.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '80px 30px' }}>
+          <div style={{ marginBottom: '12px', opacity: 0.35, color: 'var(--app-accent)' }}>
+            <Icon name="inbox" size={32} />
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No conversations yet</p>
+        </div>
+      ) : (
+        <div style={{ padding: '8px 12px' }}>
+          {conversations.map(c => {
+            const isSelfChat = c.buyer_id === c.seller_id
+            const isBuyer = c.buyer_id === session.user.id
+            const otherProfile = isSelfChat ? (isBuyer ? c.buyer : c.seller) : (isBuyer ? c.seller : c.buyer)
+            const otherName = isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student')
+            const isPendingForMe = c.status === 'pending' && !isSelfChat && session.user.id === c.seller_id
             return (
-              <motion.div
-                key={tab.id}
-                onClick={() => handleTabClick(tab.id)}
-                whileTap={{ scale: 0.85 }}
-                style={{
-                  flex: 1, display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', gap: '3px', cursor: 'pointer', position: 'relative',
-                }}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTabBackground"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                    style={{
-                      position: 'absolute', top: '-4px', width: '40px', height: '4px',
-                      background: '#7C3AED', borderRadius: '2px',
-                    }}
-                  />
+              <div key={c.id} onClick={() => openThread(c)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px', cursor: 'pointer', borderRadius: '16px' }}>
+                {c.listing?.image_url ? (
+                  <img src={c.listing.image_url} alt="" style={{ width: '48px', height: '48px', borderRadius: '14px', objectFit: 'cover', flexShrink: 0 }} />
+                ) : (
+                  <InitialsAvatar name={otherName} url={isSelfChat ? null : otherProfile?.avatar_url} size={48} />
                 )}
-                <IconComponent
-                  size={24}
-                  strokeWidth={isActive ? 2.5 : 2}
-                  color={isActive ? '#7C3AED' : '#CBD5E1'}
-                  style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
-                />
-                <span style={{
-                  fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
-                  color: isActive ? '#7C3AED' : '#CBD5E1',
-                }}>
-                  {tab.label}
-                </span>
-              </motion.div>
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--text-strong)' }}>{otherName}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>{timeAgo(c.last_message_at)}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: isPendingForMe ? 'var(--app-accent)' : 'var(--text-muted)', fontWeight: isPendingForMe ? 700 : 400, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {isPendingForMe ? 'Message request' : (c.listing?.title ? `${c.listing.title} · ` : '') + (c.last_message || 'Start the conversation')}
+                  </div>
+                </div>
+              </div>
             )
           })}
         </div>
+      )}
+    </div>
+  )
+}
 
-        <AnimatePresence>
-          {showProfile && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowProfile(false)}
-                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200 }}
-              />
+function ChatThread({ session, conversation, onBack }) {
+  const [messages, setMessages] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState(conversation.status)
+  const [deciding, setDeciding] = useState(false)
+  const [viewingProfileId, setViewingProfileId] = useState(null)
+  const bottomRef = useRef(null)
 
-              <motion.div
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', stiffness: 300, damping: 32 }}
-                style={{
-                  position: 'fixed', top: 0, bottom: 0, right: 0, width: '100%',
-                  background: '#ffffff', zIndex: 201, overflowY: 'auto',
-                }}
-              >
-                <Profile session={session} onBack={() => setShowProfile(false)} />
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
+  const isSelfChat = conversation.buyerId === conversation.sellerId
+  const isRecipient = !isSelfChat && session.user.id === conversation.sellerId
+  const isInitiator = !isSelfChat && session.user.id === conversation.buyerId
+  const isPendingForMe = status === 'pending' && isRecipient
+
+  useEffect(() => {
+    fetchMessages(true)
+    const interval = setInterval(() => fetchMessages(false), 4000)
+    return () => clearInterval(interval)
+  }, [conversation.id])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages.length])
+
+  async function fetchMessages(showLoading) {
+    if (showLoading) setLoading(true)
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('id, sender_id, content, created_at')
+      .eq('conversation_id', conversation.id)
+      .order('created_at', { ascending: true })
+    if (error) console.error('Error fetching messages:', error.message)
+    setMessages(data || [])
+    if (showLoading) setLoading(false)
+  }
+
+  async function acceptRequest() {
+    setDeciding(true)
+    const { error } = await supabase.from('conversations').update({ status: 'accepted' }).eq('id', conversation.id)
+    if (!error) setStatus('accepted')
+    else console.error('Error accepting request:', error.message)
+    setDeciding(false)
+  }
+
+  async function deleteRequest() {
+    if (!window.confirm('Delete this message request? This cannot be undone.')) return
+    setDeciding(true)
+    const { error } = await supabase.from('conversations').delete().eq('id', conversation.id)
+    setDeciding(false)
+    if (!error) onBack()
+    else console.error('Error deleting request:', error.message)
+  }
+
+  async function sendMessage() {
+    if (!text.trim()) return
+    setSending(true)
+    const content = text.trim()
+    setText('')
+    const { error } = await supabase.from('chat_messages').insert({
+      conversation_id: conversation.id,
+      sender_id: session.user.id,
+      content,
+    })
+    if (!error) {
+      // Replying to a pending request counts as accepting it
+      if (isPendingForMe) {
+        await supabase.from('conversations').update({ status: 'accepted' }).eq('id', conversation.id)
+        setStatus('accepted')
+      }
+      await supabase.from('conversations').update({
+        last_message: content,
+        last_message_at: new Date().toISOString(),
+      }).eq('id', conversation.id)
+      fetchMessages(false)
+    } else {
+      console.error('Error sending message:', error.message)
+      setText(content)
+    }
+    setSending(false)
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+      <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
+          <Icon name="chevronLeft" size={20} />
+        </div>
+        <InitialsAvatar
+          name={conversation.otherName}
+          url={conversation.otherAvatar}
+          size={36}
+          onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
+        />
+        <div style={{ textAlign: 'left' }}>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-strong)' }}>{conversation.otherName}</div>
+          {conversation.listingTitle && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{conversation.listingTitle}</div>}
+        </div>
+      </div>
+
+      {isPendingForMe && (
+        <div style={{ padding: '14px 20px', background: 'var(--app-accent-soft)', borderBottom: '1px solid var(--app-border)' }}>
+          <p style={{ margin: '0 0 10px', fontSize: '12.5px', fontWeight: 700, color: 'var(--app-accent)' }}>
+            Message request — keep this conversation or delete it?
+          </p>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={acceptRequest}
+              disabled={deciding}
+              style={{ flex: 1, padding: '10px', borderRadius: '12px', border: 'none', background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+            >
+              Keep
+            </button>
+            <button
+              onClick={deleteRequest}
+              disabled={deciding}
+              style={{ flex: 1, padding: '10px', borderRadius: '12px', border: '1px solid var(--danger)', background: 'transparent', color: 'var(--danger)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === 'pending' && isInitiator && (
+        <div style={{ padding: '10px 20px', background: 'var(--page-bg)', borderBottom: '1px solid var(--app-border)' }}>
+          <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)', textAlign: 'center' }}>
+            Message request sent — they'll see it once they check their chats.
+          </p>
+        </div>
+      )}
+
+      <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: '9px', height: '9px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
+          <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', marginTop: '24px' }}>Say hello 👋</p>
+        ) : (
+          messages.map(m => {
+            const mine = m.sender_id === session.user.id
+            return (
+              <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '6px' }}>
+                {!mine && (
+                  <InitialsAvatar
+                    name={conversation.otherName}
+                    url={conversation.otherAvatar}
+                    size={22}
+                    onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
+                  />
+                )}
+                <div style={{
+                  maxWidth: '75%', padding: '10px 14px', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                  background: mine ? 'var(--app-accent)' : 'var(--card-bg)',
+                  color: mine ? '#fff' : 'var(--text-body)',
+                  border: mine ? 'none' : '1px solid var(--app-border)',
+                  fontSize: '13.5px', lineHeight: 1.5, textAlign: 'left',
+                }}>
+                  {m.content}
+                </div>
+              </div>
+            )
+          })
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div style={{ padding: '12px 16px', background: 'var(--card-bg)', borderTop: '1px solid var(--app-border)', display: 'flex', gap: '8px' }}>
+        <input
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') sendMessage() }}
+          placeholder="Message..."
+          style={{ flex: 1, padding: '12px 14px', borderRadius: '999px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--text-strong)', outline: 'none', fontSize: '13.5px' }}
+        />
+        <button onClick={sendMessage} disabled={sending || !text.trim()} style={{ width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: text.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', cursor: text.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon name="send" size={16} />
+        </button>
+      </div>
+
+      {viewingProfileId && (
+        <PublicProfileCard
+          userId={viewingProfileId}
+          session={session}
+          onClose={() => setViewingProfileId(null)}
+          hideMessageButton
+        />
+      )}
+    </div>
+  )
+}
+
+function Chats({ session, pendingChat, onClearPending, onBack }) {
+  const [openConversation, setOpenConversation] = useState(null)
+  const [resolving, setResolving] = useState(false)
+
+  useEffect(() => {
+    if (!pendingChat) return
+    let cancelled = false
+    setResolving(true)
+    findOrCreateConversation(session, pendingChat).then(result => {
+      if (cancelled) return
+
+      if (result?.error) {
+        alert('Could not open this chat. Please try again.')
+      } else if (result) {
+        setOpenConversation(result)
+      }
+
+      onClearPending()
+      setResolving(false)
+    })
+    return () => { cancelled = true }
+  }, [pendingChat])
+
+  if (resolving) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--page-bg)' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+          ))}
+        </div>
       </div>
     )
   }
 
-  return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justify: 'center',
-      background: '#ffffff',
-      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-      padding: '24px',
-    }}>
-      <div style={{
-        background: '#F8F7FF',
-        padding: '40px 32px',
-        borderRadius: '24px',
-        width: '100%',
-        maxWidth: '360px',
-        border: '1.5px solid #E8E4FF',
-        boxShadow: '0 8px 40px rgba(124,58,237,0.08)',
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h1 style={{
-            color: '#1A1A2E', margin: '0 0 4px', fontSize: '28px',
-            fontWeight: 900, letterSpacing: '-0.5px',
-          }}>PolyNet</h1>
-          <p style={{
-            color: '#7C3AED', fontSize: '11px', fontWeight: 700,
-            letterSpacing: '3px', margin: 0, fontStyle: 'italic', fontFamily: 'Georgia, serif',
-          }}>Link Up</p>
-        </div>
+  if (openConversation) {
+    return <ChatThread session={session} conversation={openConversation} onBack={() => setOpenConversation(null)} />
+  }
 
-        <form onSubmit={handleLogin}>
-          <input
-            type="email"
-            placeholder="Student email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={{
-              width: '100%', padding: '14px', marginBottom: '12px',
-              borderRadius: '14px', border: '1.5px solid #E8E4FF',
-              background: '#fff', color: '#1A1A2E', fontSize: '15px',
-              boxSizing: 'border-box', outline: 'none',
-            }}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{
-              width: '100%', padding: '14px', marginBottom: '20px',
-              borderRadius: '14px', border: '1.5px solid #E8E4FF',
-              background: '#fff', color: '#1A1A2E', fontSize: '15px',
-              boxSizing: 'border-box', outline: 'none',
-            }}
-          />
-          <motion.button whileTap={{ scale: 0.96 }} type="submit" disabled={loading} style={{
-            width: '100%', padding: '15px', borderRadius: '14px',
-            border: 'none', background: '#7C3AED', color: '#fff',
-            fontWeight: 700, fontSize: '16px', marginBottom: '12px',
-            cursor: 'pointer', boxShadow: '0 4px 20px rgba(124,58,237,0.35)',
-          }}>
-            {loading ? 'Signing in...' : 'Sign In'}
-          </motion.button>
-          <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setAuthView('signup')} disabled={loading} style={{
-            width: '100%', padding: '15px', borderRadius: '14px',
-            border: '1.5px solid #7C3AED', background: 'transparent',
-            color: '#7C3AED', fontWeight: 700, fontSize: '16px', cursor: 'pointer',
-          }}>
-            Create Account
-          </motion.button>
-        </form>
-
-        {message && (
-          <p style={{ color: '#7C3AED', textAlign: 'center', marginTop: '16px', fontSize: '13px' }}>
-            {message}
-          </p>
-        )}
-      </div>
-    </div>
-  )
+  return <Inbox session={session} onOpenThread={setOpenConversation} onBack={onBack} />
 }
 
-export default App
+export default Chats

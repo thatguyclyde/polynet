@@ -64,8 +64,8 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
   const whatsappDigits = (profile?.whatsapp_number || '').replace(/[^0-9]/g, '')
   const socialLinks = profile?.social_links || []
 
-  // Fires immediately on tap regardless of load state or event bubbling —
-  // no dependency on `profile` being resolved.
+  // Fires immediately on tap. Works for messaging yourself too — self-chat
+  // is intentionally supported, so this no longer checks isOwnProfile.
   function handleMessage(e) {
     e.preventDefault()
     e.stopPropagation()
@@ -154,7 +154,7 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
                 transition={{ delay: 0.15, duration: 0.25 }}
               >
                 <div style={{ fontSize: '19px', fontWeight: 800, color: 'var(--text-strong)', marginTop: '14px' }}>
-                  {displayName}
+                  {displayName}{isOwnProfile ? ' (You)' : ''}
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '3px' }}>
                   {profile?.department || 'No department set'}{profile?.year_of_study ? ` · Year ${profile.year_of_study}` : ''}
@@ -197,7 +197,7 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
                   </a>
                 )}
 
-                {!isOwnProfile && !hideMessageButton && (
+                {!hideMessageButton && (
                   <button
                     type="button"
                     onClick={handleMessage}
@@ -212,7 +212,7 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
                     }}
                   >
                     <Icon name="send" size={14} />
-                    Message
+                    {isOwnProfile ? 'Message Yourself' : 'Message'}
                   </button>
                 )}
               </motion.div>
