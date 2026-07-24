@@ -64,10 +64,16 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
   const whatsappDigits = (profile?.whatsapp_number || '').replace(/[^0-9]/g, '')
   const socialLinks = profile?.social_links || []
 
-  // Always fires — even if the profile fetch is still in flight or failed,
-  // we still know the userId and can fall back to a generic display name.
-  function handleMessage() {
-    onMessage?.({ id: userId, name: displayName, avatar: profile?.avatar_url || null })
+  // Fires immediately on tap regardless of load state or event bubbling —
+  // no dependency on `profile` being resolved.
+  function handleMessage(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!onMessage) {
+      console.warn('PublicProfileCard: no onMessage handler was passed in')
+      return
+    }
+    onMessage({ id: userId, name: displayName, avatar: profile?.avatar_url || null })
     onClose()
   }
 
@@ -193,6 +199,7 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
 
                 {!isOwnProfile && !hideMessageButton && (
                   <button
+                    type="button"
                     onClick={handleMessage}
                     style={{
                       width: '100%', marginTop: '22px', padding: '13px', borderRadius: '14px',
@@ -200,6 +207,8 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
                       fontWeight: 700, fontSize: '14px', cursor: 'pointer',
                       boxShadow: '0 6px 20px rgba(124,58,237,0.35)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                      appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+                      outline: 'none',
                     }}
                   >
                     <Icon name="send" size={14} />

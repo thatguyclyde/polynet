@@ -70,8 +70,6 @@ function Avatar({ url, name, size = 40, onClick }) {
   )
 }
 
-// Middle-sized like button — between the original compact version and the
-// oversized Instagram-scale one.
 function LikeButton({ isLiked, count, pulseKey, onClick }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
@@ -402,14 +400,23 @@ function Feed({ session, onStartChat }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative', overflow: 'hidden' }}>
 
+      {/* Header — "PolyNet" wordmark only, fancy display font, purple gradient */}
       <div style={{ padding: '18px 20px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img src="/logo.png" alt="PolyNet" style={{ width: '38px', height: '38px', borderRadius: '12px', objectFit: 'contain' }} />
-          <div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--app-accent)' }}>PolyNet</h1>
-            <p style={{ marginTop: '1px', fontSize: '11px', color: 'var(--text-muted)' }}>Harare Poly</p>
-          </div>
-        </div>
+        <h1 style={{
+          margin: 0,
+          fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
+          fontSize: '26px',
+          fontWeight: 800,
+          letterSpacing: '-0.5px',
+          background: 'linear-gradient(135deg, #7C3AED 0%, #A855F7 50%, #C084FC 100%)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          color: 'transparent',
+          display: 'inline-block',
+        }}>
+          PolyNet
+        </h1>
       </div>
 
       {loading ? <FeedSkeleton /> : (
@@ -972,6 +979,7 @@ function Feed({ session, onStartChat }) {
       )}
 
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
