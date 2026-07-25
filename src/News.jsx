@@ -7,6 +7,10 @@ import { useTheme } from './ThemeContext'
 
 const LIKE_ACCENT = 'var(--app-accent)'
 const VERIFIED_BLUE = '#1D9BF0'
+// Hardcoded so the exact same purple shows in both light and dark mode,
+// instead of relying on var(--app-accent) which may resolve differently
+// per theme.
+const POST_EDGE_PURPLE = '#7C3AED'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -40,10 +44,6 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
   })
 }
 
-// Meta/X-style verified badge — the scalloped "seal" outline (lucide's
-// BadgeCheck) filled solid blue as a base, with a separate crisp white
-// checkmark layered on top, since a single-color icon can't show a
-// contrasting check against its own fill.
 function VerifiedBadge({ size = 15 }) {
   return (
     <span
@@ -73,7 +73,7 @@ function VerifiedBadge({ size = 15 }) {
 
 function LikeButton({ isLiked, count, pulseKey, onClick }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
       <motion.div
         key={pulseKey}
         initial={{ scale: 1 }}
@@ -84,12 +84,12 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
       >
         <Icon
           name="thumbsUp"
-          size={20}
+          size={19}
           color={isLiked ? LIKE_ACCENT : 'var(--text-muted)'}
           fill={isLiked ? LIKE_ACCENT : 'none'}
         />
       </motion.div>
-      <span style={{ fontWeight: 700, fontSize: '13.5px', color: isLiked ? LIKE_ACCENT : 'var(--text-muted)' }}>
+      <span style={{ fontWeight: 700, fontSize: '13px', color: isLiked ? LIKE_ACCENT : 'var(--text-muted)' }}>
         {count > 0 ? count : 'Like'}
       </span>
     </div>
@@ -103,7 +103,6 @@ function News({ session }) {
   const [expandedId, setExpandedId] = useState(null)
   const [isAdmin, setIsAdmin] = useState(true)
 
-  // Composer: choose -> announcement (bold text only) OR image (photo + caption)
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerStep, setComposerStep] = useState('choose')
   const [body, setBody] = useState('')
@@ -305,31 +304,33 @@ function News({ session }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
 
-      {/* Header — matches Feed's: wordmark-only gradient text, left-aligned,
-          solid black in dark mode / white in light mode, truly sticky. */}
+      {/* Header — wordmark + subtitle explicitly left-aligned, sticky, solid
+          black in dark mode / white in light mode, same as Feed/PolyMart. */}
       <div style={{
         padding: '18px 20px 16px',
         background: headerBg,
         position: 'sticky', top: 0, zIndex: 30,
       }}>
-        <h1 style={{
-          margin: 0,
-          fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
-          fontSize: '26px',
-          fontWeight: 800,
-          letterSpacing: '-0.4px',
-          background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
-          WebkitBackgroundClip: 'text',
-          backgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          color: 'transparent',
-          display: 'inline-block',
-        }}>
-          News
-        </h1>
-        <p style={{ margin: '2px 0 0', fontSize: '11px', color: headerSubtitleColor, fontWeight: 600 }}>
-          Campus updates
-        </p>
+        <div style={{ textAlign: 'left' }}>
+          <h1 style={{
+            margin: 0,
+            fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
+            fontSize: '26px',
+            fontWeight: 800,
+            letterSpacing: '-0.4px',
+            background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+            display: 'inline-block',
+          }}>
+            News
+          </h1>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: headerSubtitleColor, fontWeight: 600, textAlign: 'left' }}>
+            Campus updates
+          </p>
+        </div>
       </div>
 
       {isAdmin && (
@@ -350,7 +351,6 @@ function News({ session }) {
         </div>
       )}
 
-      {/* Composer — Announcement is now just bold text, no headline field */}
       <AnimatePresence onExitComplete={resetComposerFields}>
         {composerOpen && (
           <>
@@ -544,7 +544,18 @@ function News({ session }) {
           const posterName = article.profiles?.full_name || 'PolyNet Admin'
 
           return (
-            <div key={article.id} style={{ background: 'var(--card-bg)', borderRadius: '22px', border: '1px solid var(--app-border)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
+            <div
+              key={article.id}
+              style={{
+                background: 'var(--card-bg)',
+                borderRadius: '22px',
+                // Same hardcoded purple in both light and dark mode, for a
+                // crisp, consistent edge around every card.
+                border: `1.5px solid ${POST_EDGE_PURPLE}`,
+                overflow: 'hidden',
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
               {hasImage && (
                 <div style={{ position: 'relative' }}>
                   <motion.img
@@ -561,7 +572,6 @@ function News({ session }) {
                 </div>
               )}
               <div style={{ padding: '16px' }}>
-                {/* Announcement badge — only for text-only posts (no image) */}
                 {!hasImage && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                     <span style={{ fontSize: '10px', fontWeight: 800, padding: '4px 8px', borderRadius: '999px', background: 'var(--app-accent-soft)', color: 'var(--app-accent)' }}>
@@ -615,8 +625,6 @@ function News({ session }) {
                   </div>
                 )}
 
-                {/* For image posts, the 3-dot menu still needs somewhere to
-                    live since the badge row is gone. Small top-right menu. */}
                 {hasImage && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2px', position: 'relative' }}>
                     <div
@@ -663,7 +671,6 @@ function News({ session }) {
 
                 {article.body && (
                   hasImage ? (
-                    // Image posts: normal-weight caption
                     <>
                       <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{preview}</p>
                       {article.body.length > 140 && (
@@ -673,7 +680,6 @@ function News({ session }) {
                       )}
                     </>
                   ) : (
-                    // Announcements: bold text, headline-style
                     <>
                       <p style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', lineHeight: 1.5 }}>{preview}</p>
                       {article.body.length > 140 && (
@@ -685,13 +691,15 @@ function News({ session }) {
                   )
                 )}
 
-                <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                {/* Footer — compacted: tighter padding/margins, name+badge
+                    and date sit close together, just enough room to fit. */}
+                <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Posted by {posterName}</span>
-                      <VerifiedBadge size={13} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Posted by {posterName}</span>
+                      <VerifiedBadge size={12} />
                     </div>
-                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '1px' }}>
                       {timeAgo(article.created_at)}
                     </div>
                   </div>
