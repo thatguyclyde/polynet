@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
+import { useTheme } from './ThemeContext'
+
+const FILTER_ORANGE = '#F59E0B'
+const FILTER_ORANGE_SOFT = 'rgba(245,158,11,0.14)'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -51,6 +55,7 @@ const CATEGORIES = [
 ]
 
 function PolyMart({ session, onMessageSeller }) {
+  const { isDark } = useTheme()
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeCat, setActiveCat] = useState('all')
@@ -148,7 +153,6 @@ function PolyMart({ session, onMessageSeller }) {
 
   function closeComposer() {
     setShowComposer(false)
-    // fields reset once the exit animation finishes (see onExitComplete below)
   }
 
   function resetComposerFields() {
@@ -166,6 +170,11 @@ function PolyMart({ session, onMessageSeller }) {
     const matchesSearch = l.title.toLowerCase().includes(search.toLowerCase())
     return matchesCat && matchesSearch
   })
+
+  const headerBg = isDark ? '#000000' : '#FFFFFF'
+  const headerSubtitleColor = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
+  const filterInactiveBorder = isDark ? 'rgba(255,255,255,0.18)' : 'var(--app-border-soft)'
+  const filterInactiveText = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
 
   if (loading) {
     return (
@@ -254,18 +263,34 @@ function PolyMart({ session, onMessageSeller }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+
+      {/* Header — matches Feed/News layout: wordmark left-aligned, sticky,
+          solid black in dark mode / white in light mode. Accent color stays
+          purple, same as everywhere else in PolyMart. */}
       <div style={{
-        padding: '18px 20px 14px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
-        position: 'sticky', top: 0, zIndex: 10,
+        padding: '18px 20px 14px',
+        background: headerBg,
+        position: 'sticky', top: 0, zIndex: 30,
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <img src="/logo.png" alt="PolyNet" style={{ width: '36px', height: '36px', borderRadius: '10px', objectFit: 'contain' }} />
-            <div>
-              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: 'var(--app-accent)', letterSpacing: '-0.3px' }}>PolyMart</h1>
-              <p style={{ margin: '1px 0 0', fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 600 }}>Buy & sell on campus</p>
-            </div>
-          </div>
+        <div style={{ textAlign: 'left' }}>
+          <h1 style={{
+            margin: 0,
+            fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
+            fontSize: '26px',
+            fontWeight: 800,
+            letterSpacing: '-0.4px',
+            background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+            display: 'inline-block',
+          }}>
+            PolyMart
+          </h1>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: headerSubtitleColor, fontWeight: 600 }}>
+            Buy & sell on campus
+          </p>
         </div>
 
         <input
@@ -273,31 +298,37 @@ function PolyMart({ session, onMessageSeller }) {
           onChange={e => setSearch(e.target.value)}
           placeholder="Search PolyMart..."
           style={{
-            width: '100%', padding: '11px 14px', borderRadius: '12px',
+            width: '100%', padding: '11px 14px', borderRadius: '12px', marginTop: '14px',
             border: '1.5px solid var(--app-border)', background: 'var(--input-bg)',
             fontSize: '13.5px', outline: 'none', boxSizing: 'border-box', marginBottom: '12px', color: 'var(--text-strong)',
           }}
         />
 
+        {/* Category filter chips — orange theme, everything else stays purple */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
-          {CATEGORIES.map(cat => (
-            <div
-              key={cat.id}
-              onClick={() => setActiveCat(cat.id)}
-              style={{
-                padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
-                whiteSpace: 'nowrap', cursor: 'pointer',
-                background: activeCat === cat.id ? 'var(--app-accent)' : 'var(--app-accent-soft)',
-                color: activeCat === cat.id ? '#fff' : 'var(--app-accent)',
-              }}
-            >
-              {cat.emoji} {cat.label}
-            </div>
-          ))}
+          {CATEGORIES.map(cat => {
+            const isActive = activeCat === cat.id
+            return (
+              <div
+                key={cat.id}
+                onClick={() => setActiveCat(cat.id)}
+                style={{
+                  padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
+                  whiteSpace: 'nowrap', cursor: 'pointer',
+                  border: isActive ? `1.5px solid ${FILTER_ORANGE}` : `1.5px solid ${filterInactiveBorder}`,
+                  background: isActive ? FILTER_ORANGE_SOFT : 'transparent',
+                  color: isActive ? FILTER_ORANGE : filterInactiveText,
+                  transition: 'border-color 0.15s, background 0.15s, color 0.15s',
+                }}
+              >
+                {cat.emoji} {cat.label}
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      {/* Floating Action Button — purple circle, plus icon */}
+      {/* Floating Action Button */}
       <div
         onClick={openComposer}
         style={{
@@ -314,9 +345,7 @@ function PolyMart({ session, onMessageSeller }) {
         <Icon name="plus" size={26} />
       </div>
 
-      {/* Composer — centered card covering only the middle of the screen.
-          Backdrop fades at one pace; the card springs in from the left at a
-          distinctly different, bouncier pace. Same pattern as Feed and News. */}
+      {/* Composer — centered card, same pattern as Feed/News */}
       <AnimatePresence onExitComplete={resetComposerFields}>
         {showComposer && (
           <>
@@ -335,7 +364,7 @@ function PolyMart({ session, onMessageSeller }) {
                 position: 'fixed', inset: 0, zIndex: 160,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 padding: '40px 24px',
-                pointerEvents: 'none', // taps outside the card fall through to the backdrop
+                pointerEvents: 'none',
               }}
             >
               <motion.div
@@ -357,7 +386,6 @@ function PolyMart({ session, onMessageSeller }) {
                   pointerEvents: 'auto',
                 }}
               >
-                {/* Panel header */}
                 <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
                   <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
                     List an Item
@@ -516,6 +544,10 @@ function PolyMart({ session, onMessageSeller }) {
       </div>
 
       <div style={{ height: '20px' }} />
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');
+      `}</style>
     </div>
   )
 }

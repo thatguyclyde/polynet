@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { NewsSkeleton } from './Skeleton'
+import { useTheme } from './ThemeContext'
 
 const LIKE_ACCENT = 'var(--app-accent)'
 const VERIFIED_BLUE = '#1D9BF0'
@@ -39,24 +40,40 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
   })
 }
 
-// Small blue verified badge, same visual language as X/Instagram checkmarks
-function VerifiedBadge({ size = 13 }) {
+// Meta/X-style verified badge — the scalloped "seal" outline (lucide's
+// BadgeCheck) filled solid blue as a base, with a separate crisp white
+// checkmark layered on top, since a single-color icon can't show a
+// contrasting check against its own fill.
+function VerifiedBadge({ size = 15 }) {
   return (
     <span
       title="Verified"
       style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: size, height: size, borderRadius: '50%', background: VERIFIED_BLUE, flexShrink: 0,
+        position: 'relative', width: size, height: size, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', flexShrink: 0,
       }}
     >
-      <Icon name="check" size={size * 0.62} color="#fff" strokeWidth={3} />
+      <Icon
+        name="badgeCheck"
+        size={size}
+        color={VERIFIED_BLUE}
+        fill={VERIFIED_BLUE}
+        style={{ position: 'absolute', top: 0, left: 0 }}
+      />
+      <Icon
+        name="check"
+        size={size * 0.46}
+        color="#fff"
+        strokeWidth={3.5}
+        style={{ position: 'relative' }}
+      />
     </span>
   )
 }
 
 function LikeButton({ isLiked, count, pulseKey, onClick }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
       <motion.div
         key={pulseKey}
         initial={{ scale: 1 }}
@@ -67,12 +84,12 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
       >
         <Icon
           name="thumbsUp"
-          size={16}
+          size={20}
           color={isLiked ? LIKE_ACCENT : 'var(--text-muted)'}
           fill={isLiked ? LIKE_ACCENT : 'none'}
         />
       </motion.div>
-      <span style={{ fontWeight: 700, fontSize: '12px', color: isLiked ? LIKE_ACCENT : 'var(--text-muted)' }}>
+      <span style={{ fontWeight: 700, fontSize: '13.5px', color: isLiked ? LIKE_ACCENT : 'var(--text-muted)' }}>
         {count > 0 ? count : 'Like'}
       </span>
     </div>
@@ -80,15 +97,15 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
 }
 
 function News({ session }) {
+  const { isDark } = useTheme()
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
   const [isAdmin, setIsAdmin] = useState(true)
 
-  // Composer: choose -> announcement (headline + story) OR image (photo + caption)
+  // Composer: choose -> announcement (bold text only) OR image (photo + caption)
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerStep, setComposerStep] = useState('choose')
-  const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
@@ -152,7 +169,7 @@ function News({ session }) {
   }
 
   async function handlePost() {
-    if (composerStep === 'announcement' && !title.trim()) return
+    if (composerStep === 'announcement' && !body.trim()) return
     if (composerStep === 'image' && !imageFile) return
     setPosting(true)
 
@@ -166,11 +183,9 @@ function News({ session }) {
       }
     }
 
-    const finalTitle = composerStep === 'announcement' ? title.trim() : ''
-
     const { error } = await supabase.from('news_articles').insert({
       author_id: session.user.id,
-      title: finalTitle,
+      title: '',
       body,
       image_url: imageUrl,
     })
@@ -193,7 +208,6 @@ function News({ session }) {
 
   function resetComposerFields() {
     setComposerStep('choose')
-    setTitle('')
     setBody('')
     setImageFile(null)
     setImagePreview(null)
@@ -277,7 +291,7 @@ function News({ session }) {
 
   function shareArticle(article) {
     if (navigator.share) {
-      navigator.share({ title: article.title || 'PolyNet News', text: 'Check out this update on PolyNet' })
+      navigator.share({ title: 'PolyNet News', text: 'Check out this update on PolyNet' })
     } else {
       alert('Article link copied to clipboard!')
       navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#article-${article.id}`)
@@ -285,16 +299,37 @@ function News({ session }) {
     setOpenMenuId(null)
   }
 
+  const headerBg = isDark ? '#000000' : '#FFFFFF'
+  const headerSubtitleColor = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-      <div style={{ padding: '18px 20px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img src="/logo.png" alt="PolyNet" style={{ width: '38px', height: '38px', borderRadius: '12px', objectFit: 'contain' }} />
-          <div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--app-accent)' }}>News</h1>
-            <p style={{ marginTop: '1px', fontSize: '11px', color: 'var(--text-muted)' }}>Campus updates</p>
-          </div>
-        </div>
+
+      {/* Header — matches Feed's: wordmark-only gradient text, left-aligned,
+          solid black in dark mode / white in light mode, truly sticky. */}
+      <div style={{
+        padding: '18px 20px 16px',
+        background: headerBg,
+        position: 'sticky', top: 0, zIndex: 30,
+      }}>
+        <h1 style={{
+          margin: 0,
+          fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
+          fontSize: '26px',
+          fontWeight: 800,
+          letterSpacing: '-0.4px',
+          background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          color: 'transparent',
+          display: 'inline-block',
+        }}>
+          News
+        </h1>
+        <p style={{ margin: '2px 0 0', fontSize: '11px', color: headerSubtitleColor, fontWeight: 600 }}>
+          Campus updates
+        </p>
       </div>
 
       {isAdmin && (
@@ -315,7 +350,7 @@ function News({ session }) {
         </div>
       )}
 
-      {/* Composer — centered card. Choose step offers Announcement vs Image. */}
+      {/* Composer — Announcement is now just bold text, no headline field */}
       <AnimatePresence onExitComplete={resetComposerFields}>
         {composerOpen && (
           <>
@@ -382,11 +417,11 @@ function News({ session }) {
                         }}
                       >
                         <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Icon name="newspaper" size={20} color="var(--app-accent)" />
+                          <Icon name="megaphone" size={20} color="var(--app-accent)" />
                         </div>
                         <div>
                           <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Announcement</div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Write a headline and a story</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>A bold, text-only post</div>
                         </div>
                       </div>
 
@@ -411,38 +446,29 @@ function News({ session }) {
 
                   {composerStep === 'announcement' && (
                     <div style={{ padding: '20px' }}>
-                      <input
-                        value={title}
-                        onChange={e => setTitle(e.target.value)}
-                        placeholder="Headline..."
-                        style={{
-                          width: '100%', padding: '12px', borderRadius: '14px',
-                          border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
-                          color: 'var(--text-strong)', boxSizing: 'border-box', outline: 'none',
-                          fontSize: '14px', marginBottom: '10px',
-                        }}
-                      />
                       <textarea
                         value={body}
                         onChange={e => setBody(e.target.value)}
-                        placeholder="Write the story..."
-                        rows={6}
+                        placeholder="Write your announcement..."
+                        rows={8}
+                        autoFocus
                         style={{
-                          width: '100%', padding: '12px', borderRadius: '14px',
+                          width: '100%', padding: '14px', borderRadius: '14px',
                           border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)',
                           color: 'var(--text-strong)', resize: 'none', boxSizing: 'border-box',
-                          outline: 'none', fontFamily: 'inherit', fontSize: '13.5px',
+                          outline: 'none', fontFamily: 'inherit', fontSize: '15px', fontWeight: 700,
+                          lineHeight: 1.5,
                         }}
                       />
 
                       <button
                         onClick={handlePost}
-                        disabled={posting || !title.trim()}
+                        disabled={posting || !body.trim()}
                         style={{
                           width: '100%', marginTop: '16px', padding: '13px', borderRadius: '14px',
-                          border: 'none', background: title.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
+                          border: 'none', background: body.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)',
                           color: '#fff', fontWeight: 700, fontSize: '14.5px',
-                          cursor: title.trim() ? 'pointer' : 'default', marginBottom: '4px',
+                          cursor: body.trim() ? 'pointer' : 'default', marginBottom: '4px',
                         }}
                       >
                         {posting ? 'Publishing...' : 'Publish Announcement'}
@@ -509,6 +535,7 @@ function News({ session }) {
       {loading ? <NewsSkeleton /> : (
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {articles.map(article => {
+          const hasImage = !!article.image_url
           const isExpanded = expandedId === article.id
           const preview = article.body?.length > 140 && !isExpanded ? article.body.slice(0, 140) + '...' : article.body
           const isOwnArticle = article.author_id === session.user.id
@@ -518,13 +545,13 @@ function News({ session }) {
 
           return (
             <div key={article.id} style={{ background: 'var(--card-bg)', borderRadius: '22px', border: '1px solid var(--app-border)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
-              {article.image_url && (
+              {hasImage && (
                 <div style={{ position: 'relative' }}>
                   <motion.img
                     layoutId={`news-image-${article.id}`}
                     onClick={() => handleImageTap(article)}
                     src={article.image_url}
-                    alt={article.title || 'News image'}
+                    alt="News image"
                     style={{
                       width: '100%', height: '180px', objectFit: 'cover', display: 'block',
                       cursor: 'pointer',
@@ -534,16 +561,64 @@ function News({ session }) {
                 </div>
               )}
               <div style={{ padding: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 800, padding: '4px 8px', borderRadius: '999px', background: 'var(--app-accent-soft)', color: 'var(--app-accent)' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <Icon name="newspaper" size={10} />
-                      ANNOUNCEMENT
+                {/* Announcement badge — only for text-only posts (no image) */}
+                {!hasImage && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 800, padding: '4px 8px', borderRadius: '999px', background: 'var(--app-accent-soft)', color: 'var(--app-accent)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <Icon name="megaphone" size={11} color="var(--app-accent)" fill="none" />
+                        ANNOUNCEMENT
+                      </span>
                     </span>
-                  </span>
-                  <div style={{ flex: 1 }} />
+                    <div style={{ flex: 1 }} />
+                    <div style={{ position: 'relative' }}>
+                      <div
+                        onClick={() => setOpenMenuId(openMenuId === article.id ? null : article.id)}
+                        style={{ cursor: 'pointer', padding: '2px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <Icon name="ellipsis-vertical" size={17} />
+                      </div>
+                      {openMenuId === article.id && !isViewingThis && (
+                        <div style={{
+                          position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                          background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '150px', overflow: 'hidden'
+                        }}>
+                          {isOwnArticle && (
+                            <div
+                              onClick={() => deleteArticle(article.id)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                            >
+                              <Icon name="trash-2" size={14} />
+                              Delete
+                            </div>
+                          )}
+                          {!isOwnArticle && (
+                            <div
+                              onClick={() => reportArticle(article.id)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                            >
+                              <Icon name="flag" size={14} />
+                              Report
+                            </div>
+                          )}
+                          <div
+                            onClick={() => shareArticle(article)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                          >
+                            <Icon name="share-2" size={14} />
+                            Share
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-                  <div style={{ position: 'relative' }}>
+                {/* For image posts, the 3-dot menu still needs somewhere to
+                    live since the badge row is gone. Small top-right menu. */}
+                {hasImage && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2px', position: 'relative' }}>
                     <div
                       onClick={() => setOpenMenuId(openMenuId === article.id ? null : article.id)}
                       style={{ cursor: 'pointer', padding: '2px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -584,20 +659,30 @@ function News({ session }) {
                       </div>
                     )}
                   </div>
-                </div>
-
-                {article.title && (
-                  <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)' }}>{article.title}</h3>
                 )}
+
                 {article.body && (
-                  <>
-                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{preview}</p>
-                    {article.body.length > 140 && (
-                      <div onClick={() => setExpandedId(isExpanded ? null : article.id)} style={{ marginTop: '8px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}>
-                        {isExpanded ? 'Show less' : 'Read more'}
-                      </div>
-                    )}
-                  </>
+                  hasImage ? (
+                    // Image posts: normal-weight caption
+                    <>
+                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{preview}</p>
+                      {article.body.length > 140 && (
+                        <div onClick={() => setExpandedId(isExpanded ? null : article.id)} style={{ marginTop: '8px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}>
+                          {isExpanded ? 'Show less' : 'Read more'}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    // Announcements: bold text, headline-style
+                    <>
+                      <p style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', lineHeight: 1.5 }}>{preview}</p>
+                      {article.body.length > 140 && (
+                        <div onClick={() => setExpandedId(isExpanded ? null : article.id)} style={{ marginTop: '8px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}>
+                          {isExpanded ? 'Show less' : 'Read more'}
+                        </div>
+                      )}
+                    </>
+                  )
                 )}
 
                 <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -643,7 +728,7 @@ function News({ session }) {
               layoutId={`news-image-${viewingArticle.id}`}
               transition={{ type: 'spring', stiffness: 260, damping: 28 }}
               src={viewingArticle.image_url}
-              alt={viewingArticle.title || 'News image'}
+              alt="News image"
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: '100%', maxHeight: '100vh', objectFit: 'contain',
@@ -743,7 +828,7 @@ function News({ session }) {
               }}
             >
               <span style={{ color: '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>
-                {viewingArticle.title || viewingArticle.body || 'PolyNet News'}
+                {viewingArticle.body || 'PolyNet News'}
               </span>
               <LikeButton
                 isLiked={likedIds.has(viewingArticle.id)}
@@ -755,6 +840,10 @@ function News({ session }) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');
+      `}</style>
     </div>
   )
 }

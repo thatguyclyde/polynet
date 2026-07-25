@@ -5,7 +5,8 @@ import {
   MapPin, Calendar, ShoppingBag, Newspaper, Zap, Star, Flag,
   Globe, MessageSquare, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,
   MoreHorizontal, MoreVertical, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
-  Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox, BookOpen, GraduationCap
+  Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox, BookOpen, GraduationCap,
+  Megaphone, BadgeCheck
 } from 'lucide-react'
 
 function TikTokIcon({ size, color }) {
@@ -115,6 +116,8 @@ const ICONS = {
   bookmark: Bookmark,
   book: BookOpen,
   school: GraduationCap,
+  megaphone: Megaphone,
+  badgeCheck: BadgeCheck,
   download: Download,
   bell: Bell,
   settings: Settings,
@@ -156,9 +159,6 @@ const ICONS = {
   github: GithubIcon,
 }
 
-// `fill` now defaults to 'none' — nothing renders solid/filled unless a
-// caller explicitly passes a fill color (e.g. the liked heart). This is
-// what was causing icons to look "filled black" in some cases.
 function Icon({ name, size = 18, color = 'currentColor', strokeWidth, style, fill = 'none' }) {
   const IconComponent = ICONS[name]
 
