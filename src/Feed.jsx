@@ -4,19 +4,23 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { FeedSkeleton } from './Skeleton'
 import PublicProfileCard from './PublicProfileCard'
+import { useTheme } from './ThemeContext'
+
+const SCHOOL_GREEN = '#22C55E'
+const OTHER_AMBER = '#F59E0B'
+const FILTER_PURPLE = '#A855F7'
+const LIKE_RED = '#ED4956'
 
 const CATEGORY_STYLES = {
-  school: { label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
-  other: { label: 'Other', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+  school: { label: 'School Related', color: SCHOOL_GREEN, bg: 'rgba(34,197,94,0.14)' },
+  other: { label: 'Other', color: OTHER_AMBER, bg: 'rgba(245,158,11,0.14)' },
 }
 
 const FILTERS = [
-  { id: 'all', label: 'All', color: 'var(--app-accent)', bg: 'var(--app-accent-soft)' },
-  { id: 'school', label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
-  { id: 'other', label: 'Other', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+  { id: 'all', label: 'All', color: FILTER_PURPLE, bg: 'rgba(168,85,247,0.18)' },
+  { id: 'school', label: 'School Related', color: SCHOOL_GREEN, bg: 'rgba(34,197,94,0.14)' },
+  { id: 'other', label: 'Other', color: OTHER_AMBER, bg: 'rgba(245,158,11,0.14)' },
 ]
-
-const LIKE_RED = '#ED4956'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -104,7 +108,7 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
 function CommentButton({ isOpen, count, onClick }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-      <Icon name="comment" size={22} color={isOpen ? 'var(--app-accent)' : 'var(--text-muted)'} />
+      <Icon name="comment" size={22} color={isOpen ? 'var(--app-accent)' : 'var(--text-muted)'} fill="none" />
       <span style={{ fontWeight: 700, fontSize: '13px', color: isOpen ? 'var(--app-accent)' : 'var(--text-muted)' }}>
         {count > 0 ? count : 'Comment'}
       </span>
@@ -113,6 +117,7 @@ function CommentButton({ isOpen, count, onClick }) {
 }
 
 function Feed({ session, onStartChat }) {
+  const { isDark } = useTheme()
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [myAvatar, setMyAvatar] = useState(null)
@@ -406,17 +411,27 @@ function Feed({ session, onStartChat }) {
 
   const filteredPosts = activeFilter === 'all' ? posts : posts.filter(p => p.post_type === activeFilter)
 
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative', overflow: 'hidden' }}>
+  // Theme-aware header + divider values — black only in dark mode, matches
+  // the current theme in light mode instead of staying black regardless.
+  const headerBg = isDark ? '#000000' : '#FFFFFF'
+  const headerSubtitleColor = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
+  const filterInactiveBorder = isDark ? 'rgba(255,255,255,0.18)' : 'var(--app-border-soft)'
+  const filterInactiveText = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
+  const postDivider = isDark ? '#000000' : 'var(--app-border)'
 
-      {/* Header — "PolyNet" wordmark, left-aligned, bright purple gradient,
-          frosted-blur backing instead of a hard border line. */}
+  return (
+    // NOTE: no `overflow: hidden` here anymore — that was the bug breaking
+    // the sticky header. An ancestor with overflow:hidden between a sticky
+    // element and its real scrolling container (the motion.div in App.jsx)
+    // prevents position:sticky from working at all.
+    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative' }}>
+
+      {/* Header — solid, theme-matched (black in dark mode, white in light
+          mode), truly sticky to the top of the scrolling feed. */}
       <div style={{
         padding: '18px 20px 14px',
-        background: 'color-mix(in srgb, var(--card-bg) 72%, transparent)',
-        backdropFilter: 'blur(14px)',
-        WebkitBackdropFilter: 'blur(14px)',
-        position: 'sticky', top: 0, zIndex: 20,
+        background: headerBg,
+        position: 'sticky', top: 0, zIndex: 30,
       }}>
         <div style={{ textAlign: 'left' }}>
           <h1 style={{
@@ -434,13 +449,13 @@ function Feed({ session, onStartChat }) {
           }}>
             PolyNet
           </h1>
-          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: headerSubtitleColor, fontWeight: 600 }}>
             Harare Poly
           </p>
         </div>
 
-        {/* Filter row — All / School Related / Other */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px', overflowX: 'auto', paddingBottom: '2px' }}>
+        {/* Filter row — All / School Related / Other. Smaller, left-aligned. */}
+        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '6px', marginTop: '12px', overflowX: 'auto', paddingBottom: '2px' }}>
           {FILTERS.map(f => {
             const isActive = activeFilter === f.id
             return (
@@ -448,11 +463,11 @@ function Feed({ session, onStartChat }) {
                 key={f.id}
                 onClick={() => setActiveFilter(f.id)}
                 style={{
-                  padding: '7px 14px', borderRadius: '999px', fontSize: '12.5px', fontWeight: 700,
+                  padding: '5px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: 700,
                   whiteSpace: 'nowrap', cursor: 'pointer',
-                  border: isActive ? `1.5px solid ${f.color}` : '1.5px solid var(--app-border-soft)',
+                  border: isActive ? `1.5px solid ${f.color}` : `1.5px solid ${filterInactiveBorder}`,
                   background: isActive ? f.bg : 'transparent',
-                  color: isActive ? f.color : 'var(--text-muted)',
+                  color: isActive ? f.color : filterInactiveText,
                   transition: 'border-color 0.15s, background 0.15s, color 0.15s',
                 }}
               >
@@ -480,7 +495,7 @@ function Feed({ session, onStartChat }) {
           const isViewingThis = viewingPost?.id === post.id
 
           return (
-            <motion.div key={post.id} layout="position" style={{ borderBottom: '8px solid var(--app-border)' }}>
+            <motion.div key={post.id} layout="position" style={{ borderBottom: `8px solid ${postDivider}` }}>
               <div style={{
                 display: 'flex', gap: '10px', alignItems: 'flex-start',
                 padding: '12px 16px 10px', position: 'relative',
@@ -514,7 +529,7 @@ function Feed({ session, onStartChat }) {
                   )}
                   {isSchoolRelated && (
                     <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }} title="School related">
-                      <Icon name="book" size={14} color="var(--success)" />
+                      <Icon name="school" size={15} color={SCHOOL_GREEN} fill="none" />
                     </div>
                   )}
                 </div>
