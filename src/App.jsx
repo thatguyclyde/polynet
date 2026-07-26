@@ -57,6 +57,9 @@ function App() {
   const [myAvatar, setMyAvatar] = useState(null)
 
   const [pendingChat, setPendingChat] = useState(null)
+  // Whether a chat thread is fullscreen-open — hides the bottom nav and the
+  // top-right profile avatar while true, leaving only the thread's own back button.
+  const [chatThreadOpen, setChatThreadOpen] = useState(false)
 
   useEffect(() => {
     const checkUserProfile = async (userSession) => {
@@ -172,32 +175,34 @@ function App() {
           }
         `}</style>
 
-        {/* Global top-right profile avatar trigger */}
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
-          display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
-          pointerEvents: 'none',
-        }}>
-          <motion.div
-            whileTap={{ scale: 0.85 }}
-            onClick={() => setShowProfile(true)}
-            style={{
-              width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
-              background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', pointerEvents: 'auto',
-              border: '2px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-            }}
-          >
-            {myAvatar ? (
-              <img src={myAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <UserCircle size={22} color="var(--app-accent)" />
-            )}
-          </motion.div>
-        </div>
+        {/* Global top-right profile avatar trigger — hidden while a chat thread is open */}
+        {!chatThreadOpen && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
+            display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
+            pointerEvents: 'none',
+          }}>
+            <motion.div
+              whileTap={{ scale: 0.85 }}
+              onClick={() => setShowProfile(true)}
+              style={{
+                width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
+                background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', pointerEvents: 'auto',
+                border: '2px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+              }}
+            >
+              {myAvatar ? (
+                <img src={myAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <UserCircle size={22} color="var(--app-accent)" />
+              )}
+            </motion.div>
+          </div>
+        )}
 
         {/* Drag-following main page container */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: '70px' }}>
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: chatThreadOpen ? 0 : '70px' }}>
           <motion.div
             key={page}
             drag="x"
@@ -218,62 +223,64 @@ function App() {
                 session={session}
                 pendingChat={pendingChat}
                 onClearPending={() => setPendingChat(null)}
-                onBack={() => setPage('feed')}
+                onThreadOpenChange={setChatThreadOpen}
               />
             )}
           </motion.div>
         </div>
 
-        {/* Bottom Navigation — Instagram-style dark mode support */}
-        <div style={{
-          position: 'fixed',
-          bottom: 0, left: 0, right: 0,
-          background: 'var(--card-bg)',
-          borderTop: '1px solid var(--app-border)',
-          display: 'flex',
-          padding: '10px 0 18px',
-          zIndex: 100,
-          boxShadow: '0 -4px 20px rgba(0,0,0,0.05)',
-        }}>
-          {TABS.map(tab => {
-            const isActive = page === tab.id
-            const IconComponent = tab.icon
-            return (
-              <motion.div
-                key={tab.id}
-                onClick={() => handleTabClick(tab.id)}
-                whileTap={{ scale: 0.85 }}
-                style={{
-                  flex: 1, display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', gap: '3px', cursor: 'pointer', position: 'relative',
-                }}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTabBackground"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                    style={{
-                      position: 'absolute', top: '-4px', width: '40px', height: '4px',
-                      background: 'var(--app-accent)', borderRadius: '2px',
-                    }}
+        {/* Bottom Navigation — hidden while a chat thread is open */}
+        {!chatThreadOpen && (
+          <div style={{
+            position: 'fixed',
+            bottom: 0, left: 0, right: 0,
+            background: 'var(--card-bg)',
+            borderTop: '1px solid var(--app-border)',
+            display: 'flex',
+            padding: '10px 0 18px',
+            zIndex: 100,
+            boxShadow: '0 -4px 20px rgba(0,0,0,0.05)',
+          }}>
+            {TABS.map(tab => {
+              const isActive = page === tab.id
+              const IconComponent = tab.icon
+              return (
+                <motion.div
+                  key={tab.id}
+                  onClick={() => handleTabClick(tab.id)}
+                  whileTap={{ scale: 0.85 }}
+                  style={{
+                    flex: 1, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', gap: '3px', cursor: 'pointer', position: 'relative',
+                  }}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTabBackground"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      style={{
+                        position: 'absolute', top: '-4px', width: '40px', height: '4px',
+                        background: 'var(--app-accent)', borderRadius: '2px',
+                      }}
+                    />
+                  )}
+                  <IconComponent
+                    size={24}
+                    strokeWidth={isActive ? 2.5 : 1.8}
+                    color={isActive ? 'var(--text-strong)' : 'var(--text-muted)'}
+                    style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
                   />
-                )}
-                <IconComponent
-                  size={24}
-                  strokeWidth={isActive ? 2.5 : 1.8}
-                  color={isActive ? 'var(--text-strong)' : 'var(--text-muted)'}
-                  style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
-                />
-                <span style={{
-                  fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
-                  color: isActive ? 'var(--text-strong)' : 'var(--text-muted)',
-                }}>
-                  {tab.label}
-                </span>
-              </motion.div>
-            )
-          })}
-        </div>
+                  <span style={{
+                    fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
+                    color: isActive ? 'var(--text-strong)' : 'var(--text-muted)',
+                  }}>
+                    {tab.label}
+                  </span>
+                </motion.div>
+              )
+            })}
+          </div>
+        )}
 
         {/* Profile Slide-Over */}
         <AnimatePresence>

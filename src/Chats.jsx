@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import PublicProfileCard from './PublicProfileCard'
+import { useTheme } from './ThemeContext'
+
+const CHAT_BORDER_PURPLE = 'rgba(124,58,237,0.35)'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -34,10 +37,8 @@ function InitialsAvatar({ name, url, size = 44, onClick }) {
   )
 }
 
-// A conversation's initial status is 'pending' unless it's a self-chat, in which
-// case there's no one to "request" — it's accepted immediately.
 async function findOrCreateConversation(session, pendingChat) {
-  const { listingId = null, sellerId, listingTitle = null, sellerName, sellerAvatar = null } = pendingChat
+  const { listingId = null, sellerId, listingTitle = null, sellerName, sellerAvatar = null, listingImage = null } = pendingChat
   const myId = session.user.id
   const isSelfChat = sellerId === myId
 
@@ -84,7 +85,7 @@ async function findOrCreateConversation(session, pendingChat) {
   return {
     id: conversation.id,
     listingTitle,
-    listingImage: null,
+    listingImage,
     otherName: isSelfChat ? 'You' : (sellerName || 'PolyNet Student'),
     otherAvatar: isSelfChat ? null : sellerAvatar,
     otherUserId: sellerId,
@@ -94,9 +95,11 @@ async function findOrCreateConversation(session, pendingChat) {
   }
 }
 
-function Inbox({ session, onOpenThread, onBack }) {
+function Inbox({ session, onOpenThread, isDark }) {
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
+
+  const headerBg = isDark ? '#000000' : '#FFFFFF'
 
   useEffect(() => {
     fetchConversations()
@@ -138,11 +141,28 @@ function Inbox({ session, onOpenThread, onBack }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-      <div style={{ padding: '18px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
-          <Icon name="chevronLeft" size={20} />
-        </div>
-        <span style={{ fontWeight: 700, fontSize: '17px', color: 'var(--text-strong)' }}>Chats</span>
+      {/* Header — matches Feed/News/PolyMart: gradient wordmark, left-aligned,
+          sticky, no back button (main tabs are already visible here). */}
+      <div style={{
+        padding: '18px 20px 16px',
+        background: headerBg,
+        position: 'sticky', top: 0, zIndex: 30,
+      }}>
+        <h1 style={{
+          margin: 0,
+          fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
+          fontSize: '26px',
+          fontWeight: 800,
+          letterSpacing: '-0.4px',
+          background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          color: 'transparent',
+          display: 'inline-block',
+        }}>
+          Messages
+        </h1>
       </div>
 
       {loading ? (
@@ -161,20 +181,26 @@ function Inbox({ session, onOpenThread, onBack }) {
           <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No conversations yet</p>
         </div>
       ) : (
-        <div style={{ padding: '8px 12px' }}>
-          {conversations.map(c => {
+        <div style={{ padding: '4px 12px' }}>
+          {conversations.map((c, idx) => {
             const isSelfChat = c.buyer_id === c.seller_id
             const isBuyer = c.buyer_id === session.user.id
             const otherProfile = isSelfChat ? (isBuyer ? c.buyer : c.seller) : (isBuyer ? c.seller : c.buyer)
             const otherName = isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student')
             const isPendingForMe = c.status === 'pending' && !isSelfChat && session.user.id === c.seller_id
+            const isLast = idx === conversations.length - 1
             return (
-              <div key={c.id} onClick={() => openThread(c)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px', cursor: 'pointer', borderRadius: '16px' }}>
-                {c.listing?.image_url ? (
-                  <img src={c.listing.image_url} alt="" style={{ width: '48px', height: '48px', borderRadius: '14px', objectFit: 'cover', flexShrink: 0 }} />
-                ) : (
-                  <InitialsAvatar name={otherName} url={isSelfChat ? null : otherProfile?.avatar_url} size={48} />
-                )}
+              <div
+                key={c.id}
+                onClick={() => openThread(c)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px', cursor: 'pointer',
+                  borderBottom: isLast ? 'none' : `1px solid ${CHAT_BORDER_PURPLE}`,
+                }}
+              >
+                {/* Always the person's own profile picture — never the
+                    marketplace listing image. */}
+                <InitialsAvatar name={otherName} url={isSelfChat ? null : otherProfile?.avatar_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                     <span style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--text-strong)' }}>{otherName}</span>
@@ -258,7 +284,6 @@ function ChatThread({ session, conversation, onBack }) {
       content,
     })
     if (!error) {
-      // Replying to a pending request counts as accepting it
       if (isPendingForMe) {
         await supabase.from('conversations').update({ status: 'accepted' }).eq('id', conversation.id)
         setStatus('accepted')
@@ -279,7 +304,7 @@ function ChatThread({ session, conversation, onBack }) {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
         <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
-          <Icon name="chevronLeft" size={20} />
+          <Icon name="arrowLeft" size={20} />
         </div>
         <InitialsAvatar
           name={conversation.otherName}
@@ -337,26 +362,48 @@ function ChatThread({ session, conversation, onBack }) {
         ) : messages.length === 0 ? (
           <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', marginTop: '24px' }}>Say hello 👋</p>
         ) : (
-          messages.map(m => {
+          messages.map((m, idx) => {
             const mine = m.sender_id === session.user.id
+            // Product-reference thumbnail attaches once, on the very first
+            // message of the conversation, above the bubble it belongs to.
+            const showListingRef = idx === 0 && conversation.listingImage && m.sender_id === conversation.buyerId
+
             return (
-              <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '6px' }}>
-                {!mine && (
-                  <InitialsAvatar
-                    name={conversation.otherName}
-                    url={conversation.otherAvatar}
-                    size={22}
-                    onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
-                  />
+              <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+                {showListingRef && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px',
+                    padding: '6px', borderRadius: '14px', background: 'var(--card-bg)',
+                    border: '1px solid var(--app-border)', maxWidth: '75%',
+                  }}>
+                    <img
+                      src={conversation.listingImage}
+                      alt={conversation.listingTitle || 'Listing'}
+                      style={{ width: '38px', height: '38px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {conversation.listingTitle || 'Listing'}
+                    </span>
+                  </div>
                 )}
-                <div style={{
-                  maxWidth: '75%', padding: '10px 14px', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                  background: mine ? 'var(--app-accent)' : 'var(--card-bg)',
-                  color: mine ? '#fff' : 'var(--text-body)',
-                  border: mine ? 'none' : '1px solid var(--app-border)',
-                  fontSize: '13.5px', lineHeight: 1.5, textAlign: 'left',
-                }}>
-                  {m.content}
+                <div style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '6px', width: '100%' }}>
+                  {!mine && (
+                    <InitialsAvatar
+                      name={conversation.otherName}
+                      url={conversation.otherAvatar}
+                      size={22}
+                      onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
+                    />
+                  )}
+                  <div style={{
+                    maxWidth: '75%', padding: '10px 14px', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                    background: mine ? 'var(--app-accent)' : 'var(--card-bg)',
+                    color: mine ? '#fff' : 'var(--text-body)',
+                    border: mine ? 'none' : '1px solid var(--app-border)',
+                    fontSize: '13.5px', lineHeight: 1.5, textAlign: 'left',
+                  }}>
+                    {m.content}
+                  </div>
                 </div>
               </div>
             )
@@ -390,9 +437,16 @@ function ChatThread({ session, conversation, onBack }) {
   )
 }
 
-function Chats({ session, pendingChat, onClearPending, onBack }) {
+function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
+  const { isDark } = useTheme()
   const [openConversation, setOpenConversation] = useState(null)
   const [resolving, setResolving] = useState(false)
+
+  // Tells App.jsx whether a thread is open, so it can hide the bottom nav
+  // and the top-right profile avatar while a chat is fullscreen.
+  useEffect(() => {
+    onThreadOpenChange?.(!!openConversation)
+  }, [openConversation])
 
   useEffect(() => {
     if (!pendingChat) return
@@ -429,7 +483,7 @@ function Chats({ session, pendingChat, onClearPending, onBack }) {
     return <ChatThread session={session} conversation={openConversation} onBack={() => setOpenConversation(null)} />
   }
 
-  return <Inbox session={session} onOpenThread={setOpenConversation} onBack={onBack} />
+  return <Inbox session={session} onOpenThread={setOpenConversation} isDark={isDark} />
 }
 
 export default Chats

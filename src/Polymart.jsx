@@ -4,8 +4,9 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
 
-const FILTER_ORANGE = '#F59E0B'
-const FILTER_ORANGE_SOFT = 'rgba(245,158,11,0.14)'
+// Active filter chip is now a plain white highlight instead of orange
+const FILTER_ACTIVE_BG = '#FFFFFF'
+const FILTER_ACTIVE_TEXT = '#1A1A2E'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -248,7 +249,8 @@ function PolyMart({ session, onMessageSeller }) {
             listingId: selectedListing.id,
             sellerId: selectedListing.seller_id,
             listingTitle: selectedListing.title,
-            sellerName: selectedListing.profiles?.full_name || 'PolyNet Student'
+            sellerName: selectedListing.profiles?.full_name || 'PolyNet Student',
+            listingImage: selectedListing.image_url || null,
           })} style={{
             width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
             background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '15px',
@@ -304,7 +306,7 @@ function PolyMart({ session, onMessageSeller }) {
           }}
         />
 
-        {/* Category filter chips — orange theme, everything else stays purple */}
+        {/* Category filter chips — active state is now a plain white highlight */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
           {CATEGORIES.map(cat => {
             const isActive = activeCat === cat.id
@@ -315,10 +317,11 @@ function PolyMart({ session, onMessageSeller }) {
                 style={{
                   padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
                   whiteSpace: 'nowrap', cursor: 'pointer',
-                  border: isActive ? `1.5px solid ${FILTER_ORANGE}` : `1.5px solid ${filterInactiveBorder}`,
-                  background: isActive ? FILTER_ORANGE_SOFT : 'transparent',
-                  color: isActive ? FILTER_ORANGE : filterInactiveText,
-                  transition: 'border-color 0.15s, background 0.15s, color 0.15s',
+                  border: isActive ? '1.5px solid rgba(0,0,0,0.08)' : `1.5px solid ${filterInactiveBorder}`,
+                  background: isActive ? FILTER_ACTIVE_BG : 'transparent',
+                  color: isActive ? FILTER_ACTIVE_TEXT : filterInactiveText,
+                  boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.12)' : 'none',
+                  transition: 'border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s',
                 }}
               >
                 {cat.emoji} {cat.label}
@@ -411,7 +414,7 @@ function PolyMart({ session, onMessageSeller }) {
                   <textarea
                     value={description}
                     onChange={e => setDescription(e.target.value)}
-                    placeholder="Describe the item..."
+                    placeholder="Additional info..."
                     rows={3}
                     style={{ ...composerInput, resize: 'none', fontFamily: 'inherit' }}
                   />
