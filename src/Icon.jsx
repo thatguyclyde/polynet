@@ -6,7 +6,7 @@ import {
   Globe, MessageSquare, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,
   MoreHorizontal, MoreVertical, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
   Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox, BookOpen, GraduationCap,
-  Megaphone, BadgeCheck
+  Megaphone, BadgeCheck, Shirt, Armchair, Wrench, Package
 } from 'lucide-react'
 
 function TikTokIcon({ size, color }) {
@@ -118,6 +118,10 @@ const ICONS = {
   school: GraduationCap,
   megaphone: Megaphone,
   badgeCheck: BadgeCheck,
+  shirt: Shirt,
+  armchair: Armchair,
+  wrench: Wrench,
+  package: Package,
   download: Download,
   bell: Bell,
   settings: Settings,

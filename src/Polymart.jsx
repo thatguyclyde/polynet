@@ -4,9 +4,9 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
 
-// Active filter chip is now a plain white highlight instead of orange
 const FILTER_ACTIVE_BG = '#FFFFFF'
 const FILTER_ACTIVE_TEXT = '#1A1A2E'
+const FILTER_PURPLE_EDGE = '#7C3AED'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -45,17 +45,22 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
   })
 }
 
+// Every category now uses a real lucide icon instead of an emoji
 const CATEGORIES = [
-  { id: 'all',         label: 'All',         emoji: '🛍️' },
-  { id: 'electronics', label: 'Electronics', emoji: '📱' },
-  { id: 'books',       label: 'Books',       emoji: '📚' },
-  { id: 'clothing',    label: 'Clothing',    emoji: '👕' },
-  { id: 'furniture',   label: 'Furniture',   emoji: '🪑' },
-  { id: 'services',    label: 'Services',    emoji: '🛠️' },
-  { id: 'other',       label: 'Other',       emoji: '📦' },
+  { id: 'all',         label: 'All',         icon: 'shoppingBag' },
+  { id: 'electronics', label: 'Electronics', icon: 'zap' },
+  { id: 'books',       label: 'Books',       icon: 'book' },
+  { id: 'clothing',    label: 'Clothing',    icon: 'shirt' },
+  { id: 'furniture',   label: 'Furniture',   icon: 'armchair' },
+  { id: 'services',    label: 'Services',    icon: 'wrench' },
+  { id: 'other',       label: 'Other',       icon: 'package' },
 ]
 
-function PolyMart({ session, onMessageSeller }) {
+function categoryIcon(id) {
+  return CATEGORIES.find(c => c.id === id)?.icon || 'package'
+}
+
+function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   const { isDark } = useTheme()
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
@@ -78,11 +83,18 @@ function PolyMart({ session, onMessageSeller }) {
     fetchListings()
   }, [])
 
+  // Let the parent (App.jsx) know when a listing's detail view is open, so
+  // it can hide the top-right profile avatar while it's showing.
+  useEffect(() => {
+    onListingOpenChange?.(!!selectedListing)
+    return () => onListingOpenChange?.(false)
+  }, [selectedListing])
+
   async function fetchListings() {
     setLoading(true)
     const { data, error } = await supabase
       .from('marketplace_listings')
-      .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department)')
+      .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department, avatar_url)')
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch error:', error.message)
     if (data) setListings(data)
@@ -176,6 +188,10 @@ function PolyMart({ session, onMessageSeller }) {
   const headerSubtitleColor = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
   const filterInactiveBorder = isDark ? 'rgba(255,255,255,0.18)' : 'var(--app-border-soft)'
   const filterInactiveText = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
+  // Slightly darker than pure page background in light mode, so listing
+  // cards visibly stand out against it. Left untouched in dark mode, where
+  // the existing page/card contrast already works fine.
+  const listingsAreaBg = isDark ? 'var(--page-bg)' : '#F5F4FA'
 
   if (loading) {
     return (
@@ -211,8 +227,8 @@ function PolyMart({ session, onMessageSeller }) {
           <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '260px', objectFit: 'cover' }}
             onError={(e) => { e.target.style.display = 'none' }} />
         ) : (
-          <div style={{ width: '100%', height: '260px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '50px' }}>
-            {CATEGORIES.find(c => c.id === l.category)?.emoji || '📦'}
+          <div style={{ width: '100%', height: '260px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name={categoryIcon(l.category)} size={44} color="var(--app-accent)" />
           </div>
         )}
 
@@ -245,18 +261,24 @@ function PolyMart({ session, onMessageSeller }) {
             </div>
           )}
 
-          <button onClick={() => onMessageSeller && onMessageSeller({
-            listingId: selectedListing.id,
-            sellerId: selectedListing.seller_id,
-            listingTitle: selectedListing.title,
-            sellerName: selectedListing.profiles?.full_name || 'PolyNet Student',
-            listingImage: selectedListing.image_url || null,
-          })} style={{
-            width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
-            background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '15px',
-            cursor: 'pointer', boxShadow: 'var(--shadow-accent)',
-          }}>
-            💬 Message Seller
+          <button
+            onClick={() => onMessageSeller && onMessageSeller({
+  listingId: selectedListing.id,
+  sellerId: selectedListing.seller_id,
+  listingTitle: selectedListing.title,
+  sellerName: selectedListing.profiles?.full_name || 'PolyNet Student',
+  listingImage: selectedListing.image_url || null,
+  sellerAvatar: selectedListing.profiles?.avatar_url || null,
+})}
+            style={{
+              width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
+              background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '15px',
+              cursor: 'pointer', boxShadow: 'var(--shadow-accent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            }}
+          >
+            <Icon name="comment" size={17} color="#fff" />
+            Message Seller
           </button>
         </div>
       </div>
@@ -266,9 +288,6 @@ function PolyMart({ session, onMessageSeller }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
 
-      {/* Header — matches Feed/News layout: wordmark left-aligned, sticky,
-          solid black in dark mode / white in light mode. Accent color stays
-          purple, same as everywhere else in PolyMart. */}
       <div style={{
         padding: '18px 20px 14px',
         background: headerBg,
@@ -306,7 +325,7 @@ function PolyMart({ session, onMessageSeller }) {
           }}
         />
 
-        {/* Category filter chips — active state is now a plain white highlight */}
+        {/* Category filter chips — lucide icons, purple-edged when active */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
           {CATEGORIES.map(cat => {
             const isActive = activeCat === cat.id
@@ -315,16 +334,17 @@ function PolyMart({ session, onMessageSeller }) {
                 key={cat.id}
                 onClick={() => setActiveCat(cat.id)}
                 style={{
+                  display: 'flex', alignItems: 'center', gap: '5px',
                   padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
                   whiteSpace: 'nowrap', cursor: 'pointer',
-                  border: isActive ? '1.5px solid rgba(0,0,0,0.08)' : `1.5px solid ${filterInactiveBorder}`,
+                  border: isActive ? `1.5px solid ${FILTER_PURPLE_EDGE}` : `1.5px solid ${filterInactiveBorder}`,
                   background: isActive ? FILTER_ACTIVE_BG : 'transparent',
                   color: isActive ? FILTER_ACTIVE_TEXT : filterInactiveText,
-                  boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.12)' : 'none',
-                  transition: 'border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s',
+                  transition: 'border-color 0.15s, background 0.15s, color 0.15s',
                 }}
               >
-                {cat.emoji} {cat.label}
+                <Icon name={cat.icon} size={14} color={isActive ? FILTER_ACTIVE_TEXT : filterInactiveText} />
+                {cat.label}
               </div>
             )
           })}
@@ -348,7 +368,7 @@ function PolyMart({ session, onMessageSeller }) {
         <Icon name="plus" size={26} />
       </div>
 
-      {/* Composer — centered card, same pattern as Feed/News */}
+      {/* Composer — centered card */}
       <AnimatePresence onExitComplete={resetComposerFields}>
         {showComposer && (
           <>
@@ -420,20 +440,25 @@ function PolyMart({ session, onMessageSeller }) {
                   />
 
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                    {CATEGORIES.filter(c => c.id !== 'all').map(cat => (
-                      <div
-                        key={cat.id}
-                        onClick={() => setCategory(cat.id)}
-                        style={{
-                          padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                          cursor: 'pointer',
-                          background: category === cat.id ? 'var(--app-accent)' : 'var(--app-accent-soft)',
-                          color: category === cat.id ? '#fff' : 'var(--app-accent)',
-                        }}
-                      >
-                        {cat.emoji} {cat.label}
-                      </div>
-                    ))}
+                    {CATEGORIES.filter(c => c.id !== 'all').map(cat => {
+                      const isSelected = category === cat.id
+                      return (
+                        <div
+                          key={cat.id}
+                          onClick={() => setCategory(cat.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '5px',
+                            padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                            cursor: 'pointer',
+                            background: isSelected ? 'var(--app-accent)' : 'var(--app-accent-soft)',
+                            color: isSelected ? '#fff' : 'var(--app-accent)',
+                          }}
+                        >
+                          <Icon name={cat.icon} size={13} color={isSelected ? '#fff' : 'var(--app-accent)'} />
+                          {cat.label}
+                        </div>
+                      )
+                    })}
                   </div>
 
                   {imagePreview && (
@@ -448,18 +473,20 @@ function PolyMart({ session, onMessageSeller }) {
                           width: '26px', height: '26px', borderRadius: '50%',
                           background: 'rgba(0,0,0,0.6)', color: '#fff',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          cursor: 'pointer', fontSize: '14px',
+                          cursor: 'pointer',
                         }}
-                      >×</div>
+                      >
+                        <Icon name="x" size={14} color="#fff" />
+                      </div>
                     </div>
                   )}
 
                   <label style={{
                     display: 'inline-flex', width: '32px', height: '32px', borderRadius: '10px',
                     background: 'var(--app-accent-soft)', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', fontSize: '16px', marginBottom: '12px',
+                    cursor: 'pointer', marginBottom: '12px',
                   }}>
-                    📷
+                    <Icon name="camera" size={16} color="var(--app-accent)" />
                     <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
                   </label>
 
@@ -489,64 +516,68 @@ function PolyMart({ session, onMessageSeller }) {
         )}
       </AnimatePresence>
 
-      {filtered.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '80px 30px' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px', opacity: 0.3 }}>🛍️</div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No listings found</p>
-        </div>
-      )}
-
-      <div style={{
-        padding: '16px 20px', display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px',
-      }}>
-        {filtered.map(l => (
-          <div
-            key={l.id}
-            onClick={() => setSelectedListing(l)}
-            style={{
-              background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
-              border: '1px solid var(--app-border)', cursor: 'pointer',
-              boxShadow: 'var(--shadow-card)',
-            }}
-          >
-            {l.image_url ? (
-              <img
-                src={l.image_url}
-                alt={l.title}
-                style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }}
-                onError={(e) => {
-                  e.target.style.display = 'none'
-                  e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
-                }}
-              />
-            ) : null}
-            <div className="fallback-icon" style={{
-              width: '100%', height: '120px', background: 'var(--app-accent-soft)',
-              display: l.image_url ? 'none' : 'flex',
-              alignItems: 'center', justifyContent: 'center', fontSize: '32px',
-            }}>
-              {CATEGORIES.find(c => c.id === l.category)?.emoji || '📦'}
-            </div>
-            <div style={{ padding: '10px' }}>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
-                ${Number(l.price).toFixed(2)}
-              </div>
-              <div style={{
-                fontSize: '12.5px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {l.title}
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                {timeAgo(l.created_at)}
-              </div>
-            </div>
+      {/* Listings area — slightly darker background in light mode so cards
+          stand out clearly from the page behind them. */}
+      <div style={{ background: listingsAreaBg, minHeight: '40vh' }}>
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '80px 30px' }}>
+            <Icon name="shoppingBag" size={40} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '12px' }} />
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No listings found</p>
           </div>
-        ))}
-      </div>
+        )}
 
-      <div style={{ height: '20px' }} />
+        <div style={{
+          padding: '16px 20px', display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px',
+        }}>
+          {filtered.map(l => (
+            <div
+              key={l.id}
+              onClick={() => setSelectedListing(l)}
+              style={{
+                background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
+                border: '1px solid var(--app-border)', cursor: 'pointer',
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              {l.image_url ? (
+                <img
+                  src={l.image_url}
+                  alt={l.title}
+                  style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }}
+                  onError={(e) => {
+                    e.target.style.display = 'none'
+                    e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
+                  }}
+                />
+              ) : null}
+              <div className="fallback-icon" style={{
+                width: '100%', height: '120px', background: 'var(--app-accent-soft)',
+                display: l.image_url ? 'none' : 'flex',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Icon name={categoryIcon(l.category)} size={28} color="var(--app-accent)" />
+              </div>
+              <div style={{ padding: '10px' }}>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
+                  ${Number(l.price).toFixed(2)}
+                </div>
+                <div style={{
+                  fontSize: '12.5px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {l.title}
+                </div>
+                <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {timeAgo(l.created_at)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ height: '20px' }} />
+      </div>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');

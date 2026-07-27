@@ -6,6 +6,8 @@ import PublicProfileCard from './PublicProfileCard'
 import { useTheme } from './ThemeContext'
 
 const CHAT_BORDER_PURPLE = 'rgba(124,58,237,0.35)'
+const UNREAD_BLUE = '#1D9BF0'
+const CONV_FIELDS = 'id, listing_id, buyer_id, seller_id, status, last_message_at, buyer_last_read_at, seller_last_read_at, last_sender_id'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -37,29 +39,34 @@ function InitialsAvatar({ name, url, size = 44, onClick }) {
   )
 }
 
+// Finds the most recently active conversation between two people, regardless
+// of which listing (or no listing) originally started it — this is what
+// gives continuity: the same two people always land back in one thread.
+async function findExistingDirectConversation(myId, otherId) {
+  const [a, b] = await Promise.all([
+    supabase.from('conversations').select(CONV_FIELDS)
+      .eq('buyer_id', myId).eq('seller_id', otherId)
+      .order('last_message_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('conversations').select(CONV_FIELDS)
+      .eq('buyer_id', otherId).eq('seller_id', myId)
+      .order('last_message_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
+  if (a.error) { console.error('Error checking conversation:', a.error.message); return { error: true } }
+  if (b.error) { console.error('Error checking conversation:', b.error.message); return { error: true } }
+
+  const candidates = [a.data, b.data].filter(Boolean)
+  if (candidates.length === 0) return { data: null }
+  candidates.sort((x, y) => new Date(y.last_message_at || 0) - new Date(x.last_message_at || 0))
+  return { data: candidates[0] }
+}
+
 async function findOrCreateConversation(session, pendingChat) {
   const { listingId = null, sellerId, listingTitle = null, sellerName, sellerAvatar = null, listingImage = null } = pendingChat
   const myId = session.user.id
   const isSelfChat = sellerId === myId
 
-  let query = supabase
-    .from('conversations')
-    .select('id, listing_id, buyer_id, seller_id, status, last_message_at')
-
-  if (listingId) {
-    query = query.eq('listing_id', listingId).eq('buyer_id', myId)
-  } else {
-    query = query
-      .is('listing_id', null)
-      .or(`and(buyer_id.eq.${myId},seller_id.eq.${sellerId}),and(buyer_id.eq.${sellerId},seller_id.eq.${myId})`)
-  }
-
-  const { data: existing, error: fetchErr } = await query.maybeSingle()
-
-  if (fetchErr) {
-    console.error('Error checking for existing conversation:', fetchErr.message)
-    return { error: true }
-  }
+  const { data: existing, error: fetchErr } = await findExistingDirectConversation(myId, sellerId)
+  if (fetchErr) return { error: true }
 
   let conversation = existing
   if (!conversation) {
@@ -71,7 +78,7 @@ async function findOrCreateConversation(session, pendingChat) {
         seller_id: sellerId,
         status: isSelfChat ? 'accepted' : 'pending',
       })
-      .select('id, listing_id, buyer_id, seller_id, status, last_message_at')
+      .select(CONV_FIELDS)
       .single()
 
     if (insertErr) {
@@ -95,7 +102,16 @@ async function findOrCreateConversation(session, pendingChat) {
   }
 }
 
-function Inbox({ session, onOpenThread, isDark }) {
+function isUnreadForMe(c, myId) {
+  if (c.buyer_id === c.seller_id) return false
+  if (!c.last_message_at || !c.last_sender_id) return false
+  if (c.last_sender_id === myId) return false
+  const myLastRead = myId === c.buyer_id ? c.buyer_last_read_at : c.seller_last_read_at
+  if (!myLastRead) return true
+  return new Date(c.last_message_at) > new Date(myLastRead)
+}
+
+function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -103,14 +119,17 @@ function Inbox({ session, onOpenThread, isDark }) {
 
   useEffect(() => {
     fetchConversations()
-  }, [])
+    const interval = setInterval(() => fetchConversations(false), 6000)
+    return () => clearInterval(interval)
+  }, [refreshSignal])
 
-  async function fetchConversations() {
-    setLoading(true)
+  async function fetchConversations(showLoading = true) {
+    if (showLoading) setLoading(true)
     const { data, error } = await supabase
       .from('conversations')
       .select(`
         id, listing_id, buyer_id, seller_id, status, last_message, last_message_at, created_at,
+        buyer_last_read_at, seller_last_read_at, last_sender_id,
         listing:marketplace_listings(id, title, image_url),
         buyer:profiles!conversations_buyer_id_fkey(full_name, avatar_url),
         seller:profiles!conversations_seller_id_fkey(full_name, avatar_url)
@@ -119,7 +138,7 @@ function Inbox({ session, onOpenThread, isDark }) {
       .order('last_message_at', { ascending: false })
     if (error) console.error('Error fetching conversations:', error.message)
     setConversations(data || [])
-    setLoading(false)
+    if (showLoading) setLoading(false)
   }
 
   function openThread(c) {
@@ -141,28 +160,29 @@ function Inbox({ session, onOpenThread, isDark }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-      {/* Header — matches Feed/News/PolyMart: gradient wordmark, left-aligned,
-          sticky, no back button (main tabs are already visible here). */}
       <div style={{
-        padding: '18px 20px 16px',
+        padding: '18px 20px 20px',
         background: headerBg,
         position: 'sticky', top: 0, zIndex: 30,
       }}>
-        <h1 style={{
-          margin: 0,
-          fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
-          fontSize: '26px',
-          fontWeight: 800,
-          letterSpacing: '-0.4px',
-          background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
-          WebkitBackgroundClip: 'text',
-          backgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          color: 'transparent',
-          display: 'inline-block',
-        }}>
-          Messages
-        </h1>
+        <div style={{ textAlign: 'left' }}>
+          <h1 style={{
+            margin: 0,
+            fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
+            fontSize: '26px',
+            fontWeight: 800,
+            letterSpacing: '-0.4px',
+            lineHeight: '1.35',
+            background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
+            display: 'inline-block',
+          }}>
+            Messages
+          </h1>
+        </div>
       </div>
 
       {loading ? (
@@ -188,6 +208,7 @@ function Inbox({ session, onOpenThread, isDark }) {
             const otherProfile = isSelfChat ? (isBuyer ? c.buyer : c.seller) : (isBuyer ? c.seller : c.buyer)
             const otherName = isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student')
             const isPendingForMe = c.status === 'pending' && !isSelfChat && session.user.id === c.seller_id
+            const unread = isUnreadForMe(c, session.user.id)
             const isLast = idx === conversations.length - 1
             return (
               <div
@@ -198,15 +219,18 @@ function Inbox({ session, onOpenThread, isDark }) {
                   borderBottom: isLast ? 'none' : `1px solid ${CHAT_BORDER_PURPLE}`,
                 }}
               >
-                {/* Always the person's own profile picture — never the
-                    marketplace listing image. */}
                 <InitialsAvatar name={otherName} url={isSelfChat ? null : otherProfile?.avatar_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                    <span style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--text-strong)' }}>{otherName}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>{timeAgo(c.last_message_at)}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontWeight: unread ? 800 : 700, fontSize: '13.5px', color: 'var(--text-strong)' }}>{otherName}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      {unread && (
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: UNREAD_BLUE, flexShrink: 0 }} />
+                      )}
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{timeAgo(c.last_message_at)}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '12px', color: isPendingForMe ? 'var(--app-accent)' : 'var(--text-muted)', fontWeight: isPendingForMe ? 700 : 400, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: '12px', color: isPendingForMe ? 'var(--app-accent)' : 'var(--text-muted)', fontWeight: isPendingForMe || unread ? 700 : 400, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {isPendingForMe ? 'Message request' : (c.listing?.title ? `${c.listing.title} · ` : '') + (c.last_message || 'Start the conversation')}
                   </div>
                 </div>
@@ -236,13 +260,22 @@ function ChatThread({ session, conversation, onBack }) {
 
   useEffect(() => {
     fetchMessages(true)
+    markAsRead()
     const interval = setInterval(() => fetchMessages(false), 4000)
     return () => clearInterval(interval)
   }, [conversation.id])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length > 0) markAsRead()
   }, [messages.length])
+
+  async function markAsRead() {
+    const isBuyer = conversation.buyerId === session.user.id
+    const column = isBuyer ? 'buyer_last_read_at' : 'seller_last_read_at'
+    const { error } = await supabase.from('conversations').update({ [column]: new Date().toISOString() }).eq('id', conversation.id)
+    if (error) console.error('Error marking as read:', error.message)
+  }
 
   async function fetchMessages(showLoading) {
     if (showLoading) setLoading(true)
@@ -288,9 +321,13 @@ function ChatThread({ session, conversation, onBack }) {
         await supabase.from('conversations').update({ status: 'accepted' }).eq('id', conversation.id)
         setStatus('accepted')
       }
+      const isBuyer = conversation.buyerId === session.user.id
+      const myReadColumn = isBuyer ? 'buyer_last_read_at' : 'seller_last_read_at'
       await supabase.from('conversations').update({
         last_message: content,
         last_message_at: new Date().toISOString(),
+        last_sender_id: session.user.id,
+        [myReadColumn]: new Date().toISOString(),
       }).eq('id', conversation.id)
       fetchMessages(false)
     } else {
@@ -364,8 +401,6 @@ function ChatThread({ session, conversation, onBack }) {
         ) : (
           messages.map((m, idx) => {
             const mine = m.sender_id === session.user.id
-            // Product-reference thumbnail attaches once, on the very first
-            // message of the conversation, above the bubble it belongs to.
             const showListingRef = idx === 0 && conversation.listingImage && m.sender_id === conversation.buyerId
 
             return (
@@ -441,9 +476,8 @@ function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
   const { isDark } = useTheme()
   const [openConversation, setOpenConversation] = useState(null)
   const [resolving, setResolving] = useState(false)
+  const [inboxRefreshKey, setInboxRefreshKey] = useState(0)
 
-  // Tells App.jsx whether a thread is open, so it can hide the bottom nav
-  // and the top-right profile avatar while a chat is fullscreen.
   useEffect(() => {
     onThreadOpenChange?.(!!openConversation)
   }, [openConversation])
@@ -467,23 +501,45 @@ function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
     return () => { cancelled = true }
   }, [pendingChat])
 
-  if (resolving) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--page-bg)' }}>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-          ))}
+  function handleCloseThread() {
+    setOpenConversation(null)
+    setInboxRefreshKey(k => k + 1)
+  }
+
+  return (
+    <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
+      <Inbox session={session} onOpenThread={setOpenConversation} isDark={isDark} refreshSignal={inboxRefreshKey} />
+
+      {resolving && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 260,
+          background: 'rgba(0,0,0,0.15)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
+          </div>
         </div>
-      </div>
-    )
-  }
+      )}
 
-  if (openConversation) {
-    return <ChatThread session={session} conversation={openConversation} onBack={() => setOpenConversation(null)} />
-  }
-
-  return <Inbox session={session} onOpenThread={setOpenConversation} isDark={isDark} />
+      <AnimatePresence>
+        {openConversation && (
+          <motion.div
+            key="thread-overlay"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'tween', duration: 0.18, ease: 'easeOut' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 250, background: 'var(--page-bg)' }}
+          >
+            <ChatThread session={session} conversation={openConversation} onBack={handleCloseThread} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
 }
 
 export default Chats
