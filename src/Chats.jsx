@@ -75,8 +75,47 @@ async function isBlockedEitherWay(myId, otherId) {
   return (data || []).length > 0
 }
 
+// Attaches a product-reference message to this specific conversation, once
+// per distinct listing. Each product gets its own reference message with
+// its own thumbnail — never shared or overwritten by a different product.
+async function insertListingReferenceIfNeeded(conversationId, myId, listingId, listingTitle, listingImage) {
+  if (!listingId) return
+
+  const { data: existingRef, error: checkErr } = await supabase
+    .from('chat_messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('ref_listing_id', listingId)
+    .limit(1)
+
+  if (checkErr) {
+    console.error('Error checking existing listing reference:', checkErr.message)
+    return
+  }
+  if ((existingRef || []).length > 0) return // already referenced in this conversation
+
+  const { error: insertErr } = await supabase.from('chat_messages').insert({
+    conversation_id: conversationId,
+    sender_id: myId,
+    content: '',
+    ref_listing_id: listingId,
+    ref_listing_title: listingTitle,
+    ref_listing_image: listingImage,
+  })
+  if (insertErr) {
+    console.error('Error inserting listing reference:', insertErr.message)
+    return
+  }
+
+  await supabase.from('conversations').update({
+    last_message: listingTitle ? `Asking about: ${listingTitle}` : 'Sent a product',
+    last_message_at: new Date().toISOString(),
+    last_sender_id: myId,
+  }).eq('id', conversationId)
+}
+
 async function findOrCreateConversation(session, pendingChat) {
-  const { listingId = null, sellerId, listingTitle = null, sellerName, sellerAvatar = null, listingImage = null } = pendingChat
+  const { listingId = null, sellerId, sellerName, sellerAvatar = null, listingImage = null, listingTitle = null } = pendingChat
   const myId = session.user.id
   const isSelfChat = sellerId === myId
 
@@ -109,12 +148,14 @@ async function findOrCreateConversation(session, pendingChat) {
   }
   if (!conversation) return { error: true }
 
+  if (listingId) {
+    await insertListingReferenceIfNeeded(conversation.id, myId, listingId, listingTitle, listingImage)
+  }
+
   return {
     id: conversation.id,
-    listingTitle,
-    listingImage,
     otherName: isSelfChat ? 'You' : (sellerName || 'PolyNet Student'),
-    otherAvatar: isSelfChat ? null : sellerAvatar,
+    otherAvatar: sellerAvatar,
     otherUserId: sellerId,
     status: conversation.status,
     buyerId: conversation.buyer_id,
@@ -131,8 +172,6 @@ function isUnreadForMe(c, myId) {
   return new Date(c.last_message_at) > new Date(myLastRead)
 }
 
-// Bottom-sheet style action menu shared by long-press (Inbox) and the
-// 3-dot menu (ChatThread). `showBlock` controls whether Block appears.
 function ChatActionSheet({ onClose, onDelete, onReport, onBlock, showBlock }) {
   return (
     <div
@@ -201,7 +240,6 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
       .select(`
         id, listing_id, buyer_id, seller_id, status, last_message, last_message_at, created_at,
         buyer_last_read_at, seller_last_read_at, last_sender_id,
-        listing:marketplace_listings(id, title, image_url),
         buyer:profiles!conversations_buyer_id_fkey(full_name, avatar_url),
         seller:profiles!conversations_seller_id_fkey(full_name, avatar_url)
       `)
@@ -215,13 +253,11 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   function openThread(c) {
     const isSelfChat = c.buyer_id === c.seller_id
     const isBuyer = c.buyer_id === session.user.id
-    const otherProfile = isSelfChat ? (isBuyer ? c.buyer : c.seller) : (isBuyer ? c.seller : c.buyer)
+    const otherProfile = isSelfChat ? c.buyer : (isBuyer ? c.seller : c.buyer)
     onOpenThread({
       id: c.id,
-      listingTitle: c.listing?.title || null,
-      listingImage: c.listing?.image_url || null,
       otherName: isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student'),
-      otherAvatar: isSelfChat ? null : (otherProfile?.avatar_url || null),
+      otherAvatar: otherProfile?.avatar_url || null,
       otherUserId: isBuyer ? c.seller_id : c.buyer_id,
       status: c.status,
       buyerId: c.buyer_id,
@@ -316,7 +352,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
           {conversations.map((c, idx) => {
             const isSelfChat = c.buyer_id === c.seller_id
             const isBuyer = c.buyer_id === session.user.id
-            const otherProfile = isSelfChat ? (isBuyer ? c.buyer : c.seller) : (isBuyer ? c.seller : c.buyer)
+            const otherProfile = isSelfChat ? c.buyer : (isBuyer ? c.seller : c.buyer)
             const otherName = isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student')
             const isPendingForMe = c.status === 'pending' && !isSelfChat && session.user.id === c.seller_id
             const unread = isUnreadForMe(c, session.user.id)
@@ -336,7 +372,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
                   userSelect: 'none', WebkitUserSelect: 'none',
                 }}
               >
-                <InitialsAvatar name={otherName} url={isSelfChat ? null : otherProfile?.avatar_url} size={48} />
+                <InitialsAvatar name={otherName} url={otherProfile?.avatar_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontWeight: unread ? 800 : 700, fontSize: '13.5px', color: 'var(--text-strong)' }}>{otherName}</span>
@@ -348,7 +384,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
                     </div>
                   </div>
                   <div style={{ fontSize: '12px', color: isPendingForMe ? 'var(--app-accent)' : 'var(--text-muted)', fontWeight: isPendingForMe || unread ? 700 : 400, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {isPendingForMe ? 'Message request' : (c.listing?.title ? `${c.listing.title} · ` : '') + (c.last_message || 'Start the conversation')}
+                    {isPendingForMe ? 'Message request' : (c.last_message || 'Start the conversation')}
                   </div>
                 </div>
               </div>
@@ -379,7 +415,6 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   const [status, setStatus] = useState(conversation.status)
   const [deciding, setDeciding] = useState(false)
   const [viewingProfileId, setViewingProfileId] = useState(null)
-  const [showMenu, setShowMenu] = useState(false)
   const [showActionSheet, setShowActionSheet] = useState(false)
   const bottomRef = useRef(null)
 
@@ -411,7 +446,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
     if (showLoading) setLoading(true)
     const { data, error } = await supabase
       .from('chat_messages')
-      .select('id, sender_id, content, created_at')
+      .select('id, sender_id, content, created_at, ref_listing_id, ref_listing_title, ref_listing_image')
       .eq('conversation_id', conversation.id)
       .order('created_at', { ascending: true })
     if (error) console.error('Error fetching messages:', error.message)
@@ -516,36 +551,11 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         />
         <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-strong)' }}>{conversation.otherName}</div>
-          {conversation.listingTitle && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{conversation.listingTitle}</div>}
         </div>
 
-        <div style={{ position: 'relative' }}>
-          <div onClick={() => setShowMenu(v => !v)} style={{ cursor: 'pointer', color: 'var(--text-strong)', padding: '4px' }}>
-            <Icon name="ellipsis-vertical" size={20} />
-          </div>
-          <AnimatePresence>
-            {showMenu && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: -6 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: -6 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                style={{
-                  position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 50,
-                  background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: '150px', overflow: 'hidden',
-                  transformOrigin: 'top right',
-                }}
-              >
-                <div
-                  onClick={() => { setShowMenu(false); setShowActionSheet(true) }}
-                  style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer' }}
-                >
-                  More options
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+        {/* 3-dot icon opens the action sheet directly — no intermediate menu */}
+        <div onClick={() => setShowActionSheet(true)} style={{ cursor: 'pointer', color: 'var(--text-strong)', padding: '4px' }}>
+          <Icon name="ellipsis-vertical" size={20} />
         </div>
       </div>
 
@@ -581,71 +591,89 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         </div>
       )}
 
-      <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              {[0, 1, 2].map(i => (
-                <div key={i} style={{ width: '9px', height: '9px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-              ))}
-            </div>
-          </div>
-        ) : messages.length === 0 ? (
-          <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', marginTop: '24px' }}>Say hello 👋</p>
-        ) : (
-          messages.map((m, idx) => {
-            const mine = m.sender_id === session.user.id
-            const showListingRef = idx === 0 && conversation.listingImage && m.sender_id === conversation.buyerId
+      {/* Message area — faint purple tint + a very light "PolyNet" watermark
+          centered behind the messages, subtle enough not to compete with content */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: 'rgba(124,58,237,0.035)' }}>
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none', overflow: 'hidden',
+        }}>
+          <span style={{
+            fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: '52px',
+            color: 'var(--app-accent)', opacity: 0.05, whiteSpace: 'nowrap',
+          }}>
+            PolyNet
+          </span>
+        </div>
 
-            return (
-              <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
-                {showListingRef && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px',
-                    padding: '6px', borderRadius: '14px', background: 'var(--card-bg)',
-                    border: '1px solid var(--app-border)', maxWidth: '75%',
-                  }}>
-                    <img
-                      src={conversation.listingImage}
-                      alt={conversation.listingTitle || 'Listing'}
-                      style={{ width: '38px', height: '38px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }}
-                    />
-                    <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {conversation.listingTitle || 'Listing'}
-                    </span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '6px', width: '100%' }}>
-                  {!mine && (
-                    <InitialsAvatar
-                      name={conversation.otherName}
-                      url={conversation.otherAvatar}
-                      size={22}
-                      onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
-                    />
+        <div style={{ position: 'relative', height: '100%', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ width: '9px', height: '9px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                ))}
+              </div>
+            </div>
+          ) : messages.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', marginTop: '24px' }}>Say hello 👋</p>
+          ) : (
+            messages.map((m) => {
+              const mine = m.sender_id === session.user.id
+              const hasRef = !!m.ref_listing_image
+              const hasText = m.content && m.content.trim().length > 0
+
+              return (
+                <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+                  {hasRef && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px',
+                      padding: '6px', borderRadius: '14px', background: 'var(--card-bg)',
+                      border: '1px solid var(--app-border)', maxWidth: '75%',
+                    }}>
+                      <img
+                        src={m.ref_listing_image}
+                        alt={m.ref_listing_title || 'Listing'}
+                        style={{ width: '38px', height: '38px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }}
+                      />
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.ref_listing_title || 'Listing'}
+                      </span>
+                    </div>
+                  )}
+                  {hasText && (
+                    <div style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '6px', width: '100%' }}>
+                      {!mine && (
+                        <InitialsAvatar
+                          name={conversation.otherName}
+                          url={conversation.otherAvatar}
+                          size={22}
+                          onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
+                        />
+                      )}
+                      <div style={{
+                        maxWidth: '75%', padding: '10px 14px', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                        background: mine ? 'var(--app-accent)' : 'var(--card-bg)',
+                        color: mine ? '#fff' : 'var(--text-body)',
+                        border: mine ? 'none' : '1px solid var(--app-border)',
+                        fontSize: '13.5px', lineHeight: 1.5, textAlign: 'left',
+                      }}>
+                        {m.content}
+                      </div>
+                    </div>
                   )}
                   <div style={{
-                    maxWidth: '75%', padding: '10px 14px', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                    background: mine ? 'var(--app-accent)' : 'var(--card-bg)',
-                    color: mine ? '#fff' : 'var(--text-body)',
-                    border: mine ? 'none' : '1px solid var(--app-border)',
-                    fontSize: '13.5px', lineHeight: 1.5, textAlign: 'left',
+                    fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px',
+                    marginRight: mine ? '4px' : 0, marginLeft: mine || !hasText ? 0 : '28px',
                   }}>
-                    {m.content}
+                    {messageTime(m.created_at)}
                   </div>
                 </div>
-                {/* Timestamp under every message */}
-                <div style={{
-                  fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px',
-                  marginRight: mine ? '4px' : 0, marginLeft: mine ? 0 : '28px',
-                }}>
-                  {messageTime(m.created_at)}
-                </div>
-              </div>
-            )
-          })
-        )}
-        <div ref={bottomRef} />
+              )
+            })
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       <div style={{ padding: '12px 16px', background: 'var(--card-bg)', borderTop: '1px solid var(--app-border)', display: 'flex', gap: '8px' }}>
