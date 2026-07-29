@@ -60,6 +60,12 @@ function App() {
   // Whether a chat thread is fullscreen-open — hides the bottom nav and the
   // top-right profile avatar while true, leaving only the thread's own back button.
   const [chatThreadOpen, setChatThreadOpen] = useState(false)
+  // Whether a PolyMart listing detail view is open — same hiding behavior for the avatar.
+  const [listingDetailOpen, setListingDetailOpen] = useState(false)
+
+  // Purple unread-activity dots on the News and Chats bottom-nav icons
+  const [hasUnreadChats, setHasUnreadChats] = useState(false)
+  const [hasUnreadNews, setHasUnreadNews] = useState(false)
 
   useEffect(() => {
     const checkUserProfile = async (userSession) => {
@@ -104,6 +110,53 @@ function App() {
 
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  // Poll for unread chat messages and unread news, so the bottom nav can show
+  // a small purple dot on the relevant tab icon before the user opens it.
+  useEffect(() => {
+    if (!session) return
+
+    async function checkUnreadChats() {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('buyer_id, seller_id, last_message_at, last_sender_id, buyer_last_read_at, seller_last_read_at')
+        .or(`buyer_id.eq.${session.user.id},seller_id.eq.${session.user.id}`)
+      if (error) {
+        console.error('Error checking unread chats:', error.message)
+        return
+      }
+      const myId = session.user.id
+      const anyUnread = (data || []).some(c => {
+        if (c.buyer_id === c.seller_id) return false
+        if (!c.last_message_at || !c.last_sender_id || c.last_sender_id === myId) return false
+        const myLastRead = myId === c.buyer_id ? c.buyer_last_read_at : c.seller_last_read_at
+        if (!myLastRead) return true
+        return new Date(c.last_message_at) > new Date(myLastRead)
+      })
+      setHasUnreadChats(anyUnread)
+    }
+
+    async function checkUnreadNews() {
+      const [{ data: latest }, { data: readState }] = await Promise.all([
+        supabase.from('news_articles').select('created_at').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('news_reads').select('last_read_at').eq('user_id', session.user.id).maybeSingle(),
+      ])
+      if (!latest) {
+        setHasUnreadNews(false)
+        return
+      }
+      const lastRead = readState?.last_read_at
+      setHasUnreadNews(!lastRead || new Date(latest.created_at) > new Date(lastRead))
+    }
+
+    checkUnreadChats()
+    checkUnreadNews()
+    const interval = setInterval(() => {
+      checkUnreadChats()
+      checkUnreadNews()
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [session, page])
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -160,6 +213,8 @@ function App() {
   }
 
   if (session && onboarded) {
+    const hideChrome = chatThreadOpen || listingDetailOpen
+
     return (
       <div style={{
         background: 'var(--page-bg)',
@@ -175,8 +230,9 @@ function App() {
           }
         `}</style>
 
-        {/* Global top-right profile avatar trigger — hidden while a chat thread is open */}
-        {!chatThreadOpen && (
+        {/* Global top-right profile avatar trigger — hidden while a chat
+            thread or a PolyMart listing detail view is open */}
+        {!hideChrome && (
           <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
             display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
@@ -217,7 +273,13 @@ function App() {
           >
             {page === 'feed' && <Feed session={session} onOpenChats={() => setPage('chats')} onStartChat={handleStartChat} />}
             {page === 'news' && <News session={session} />}
-            {page === 'polymart' && <Polymart session={session} onMessageSeller={handleStartChat} />}
+            {page === 'polymart' && (
+              <Polymart
+                session={session}
+                onMessageSeller={handleStartChat}
+                onListingOpenChange={setListingDetailOpen}
+              />
+            )}
             {page === 'chats' && (
               <Chats
                 session={session}
@@ -229,8 +291,8 @@ function App() {
           </motion.div>
         </div>
 
-        {/* Bottom Navigation — hidden while a chat thread is open */}
-        {!chatThreadOpen && (
+        {/* Bottom Navigation — hidden while a chat thread or listing detail is open */}
+        {!hideChrome && (
           <div style={{
             position: 'fixed',
             bottom: 0, left: 0, right: 0,
@@ -244,6 +306,7 @@ function App() {
             {TABS.map(tab => {
               const isActive = page === tab.id
               const IconComponent = tab.icon
+              const showDot = (tab.id === 'chats' && hasUnreadChats) || (tab.id === 'news' && hasUnreadNews)
               return (
                 <motion.div
                   key={tab.id}
@@ -264,12 +327,21 @@ function App() {
                       }}
                     />
                   )}
-                  <IconComponent
-                    size={24}
-                    strokeWidth={isActive ? 2.5 : 1.8}
-                    color={isActive ? 'var(--text-strong)' : 'var(--text-muted)'}
-                    style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <IconComponent
+                      size={24}
+                      strokeWidth={isActive ? 2.5 : 1.8}
+                      color={isActive ? 'var(--text-strong)' : 'var(--text-muted)'}
+                      style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
+                    />
+                    {showDot && (
+                      <div style={{
+                        position: 'absolute', top: '-2px', right: '-4px',
+                        width: '9px', height: '9px', borderRadius: '50%',
+                        background: '#7C3AED', border: '2px solid var(--card-bg)',
+                      }} />
+                    )}
+                  </div>
                   <span style={{
                     fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
                     color: isActive ? 'var(--text-strong)' : 'var(--text-muted)',

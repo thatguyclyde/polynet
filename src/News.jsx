@@ -7,9 +7,6 @@ import { useTheme } from './ThemeContext'
 
 const LIKE_ACCENT = 'var(--app-accent)'
 const VERIFIED_BLUE = '#1D9BF0'
-// Hardcoded so the exact same purple shows in both light and dark mode,
-// instead of relying on var(--app-accent) which may resolve differently
-// per theme.
 const POST_EDGE_PURPLE = '#7C3AED'
 
 function timeAgo(dateStr) {
@@ -122,7 +119,17 @@ function News({ session }) {
   useEffect(() => {
     fetchArticles()
     fetchMyLikes()
+    markNewsAsRead()
   }, [])
+
+  // Records that this user has seen News as of now, so the purple unread
+  // dot on the bottom-nav News tab clears once they open this screen.
+  async function markNewsAsRead() {
+    const { error } = await supabase
+      .from('news_reads')
+      .upsert({ user_id: session.user.id, last_read_at: new Date().toISOString() })
+    if (error) console.error('Error marking news as read:', error.message)
+  }
 
   async function fetchMyLikes() {
     const { data } = await supabase
@@ -304,8 +311,6 @@ function News({ session }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
 
-      {/* Header — wordmark + subtitle explicitly left-aligned, sticky, solid
-          black in dark mode / white in light mode, same as Feed/PolyMart. */}
       <div style={{
         padding: '18px 20px 16px',
         background: headerBg,
@@ -549,8 +554,6 @@ function News({ session }) {
               style={{
                 background: 'var(--card-bg)',
                 borderRadius: '22px',
-                // Same hardcoded purple in both light and dark mode, for a
-                // crisp, consistent edge around every card.
                 border: `1.5px solid ${POST_EDGE_PURPLE}`,
                 overflow: 'hidden',
                 boxShadow: 'var(--shadow-card)',
@@ -691,8 +694,6 @@ function News({ session }) {
                   )
                 )}
 
-                {/* Footer — compacted: tighter padding/margins, name+badge
-                    and date sit close together, just enough room to fit. */}
                 <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

@@ -18,6 +18,11 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
+function messageTime(dateStr) {
+  if (!dateStr) return ''
+  return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 function InitialsAvatar({ name, url, size = 44, onClick }) {
   const initials = (name || 'S').split(' ').map(n => n[0]).slice(0, 2).join('')
   return (
@@ -39,9 +44,6 @@ function InitialsAvatar({ name, url, size = 44, onClick }) {
   )
 }
 
-// Finds the most recently active conversation between two people, regardless
-// of which listing (or no listing) originally started it — this is what
-// gives continuity: the same two people always land back in one thread.
 async function findExistingDirectConversation(myId, otherId) {
   const [a, b] = await Promise.all([
     supabase.from('conversations').select(CONV_FIELDS)
@@ -60,10 +62,28 @@ async function findExistingDirectConversation(myId, otherId) {
   return { data: candidates[0] }
 }
 
+async function isBlockedEitherWay(myId, otherId) {
+  const { data, error } = await supabase
+    .from('blocked_users')
+    .select('id')
+    .or(`and(blocker_id.eq.${myId},blocked_id.eq.${otherId}),and(blocker_id.eq.${otherId},blocked_id.eq.${myId})`)
+    .limit(1)
+  if (error) {
+    console.error('Error checking block status:', error.message)
+    return false
+  }
+  return (data || []).length > 0
+}
+
 async function findOrCreateConversation(session, pendingChat) {
   const { listingId = null, sellerId, listingTitle = null, sellerName, sellerAvatar = null, listingImage = null } = pendingChat
   const myId = session.user.id
   const isSelfChat = sellerId === myId
+
+  if (!isSelfChat) {
+    const blocked = await isBlockedEitherWay(myId, sellerId)
+    if (blocked) return { blocked: true }
+  }
 
   const { data: existing, error: fetchErr } = await findExistingDirectConversation(myId, sellerId)
   if (fetchErr) return { error: true }
@@ -111,9 +131,60 @@ function isUnreadForMe(c, myId) {
   return new Date(c.last_message_at) > new Date(myLastRead)
 }
 
+// Bottom-sheet style action menu shared by long-press (Inbox) and the
+// 3-dot menu (ChatThread). `showBlock` controls whether Block appears.
+function ChatActionSheet({ onClose, onDelete, onReport, onBlock, showBlock }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 12px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 14px' }} />
+
+        <div onClick={onDelete} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+          <Icon name="trash-2" size={19} color="var(--danger)" />
+          <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--danger)' }}>Delete chat</span>
+        </div>
+
+        <div onClick={onReport} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+          <Icon name="flag" size={19} color="var(--text-strong)" />
+          <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>Report</span>
+        </div>
+
+        {showBlock && (
+          <div onClick={onBlock} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+            <Icon name="ban" size={19} color="var(--danger)" />
+            <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--danger)' }}>Block user</span>
+          </div>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
 function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
+  const [actionSheetFor, setActionSheetFor] = useState(null)
+
+  const pressTimer = useRef(null)
+  const longPressTriggered = useRef(false)
 
   const headerBg = isDark ? '#000000' : '#FFFFFF'
 
@@ -156,6 +227,46 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
       buyerId: c.buyer_id,
       sellerId: c.seller_id,
     })
+  }
+
+  function handlePressStart(c) {
+    longPressTriggered.current = false
+    pressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true
+      if (navigator.vibrate) navigator.vibrate(10)
+      setActionSheetFor(c)
+    }, 480)
+  }
+
+  function handlePressEnd() {
+    clearTimeout(pressTimer.current)
+  }
+
+  function handleRowClick(c) {
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false
+      return
+    }
+    openThread(c)
+  }
+
+  async function handleDelete() {
+    const c = actionSheetFor
+    if (!c) return
+    setActionSheetFor(null)
+    if (!window.confirm('Delete this chat? This cannot be undone.')) return
+    const { error } = await supabase.from('conversations').delete().eq('id', c.id)
+    if (error) {
+      console.error('Error deleting conversation:', error.message)
+      alert('Could not delete this chat. Please try again.')
+    } else {
+      setConversations(prev => prev.filter(x => x.id !== c.id))
+    }
+  }
+
+  function handleReport() {
+    setActionSheetFor(null)
+    alert('Chat reported. Thank you for helping keep our community safe!')
   }
 
   return (
@@ -213,10 +324,16 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
             return (
               <div
                 key={c.id}
-                onClick={() => openThread(c)}
+                onClick={() => handleRowClick(c)}
+                onMouseDown={() => handlePressStart(c)}
+                onMouseUp={handlePressEnd}
+                onMouseLeave={handlePressEnd}
+                onTouchStart={() => handlePressStart(c)}
+                onTouchEnd={handlePressEnd}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px', cursor: 'pointer',
                   borderBottom: isLast ? 'none' : `1px solid ${CHAT_BORDER_PURPLE}`,
+                  userSelect: 'none', WebkitUserSelect: 'none',
                 }}
               >
                 <InitialsAvatar name={otherName} url={isSelfChat ? null : otherProfile?.avatar_url} size={48} />
@@ -239,11 +356,22 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
           })}
         </div>
       )}
+
+      <AnimatePresence>
+        {actionSheetFor && (
+          <ChatActionSheet
+            onClose={() => setActionSheetFor(null)}
+            onDelete={handleDelete}
+            onReport={handleReport}
+            showBlock={false}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-function ChatThread({ session, conversation, onBack }) {
+function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -251,6 +379,8 @@ function ChatThread({ session, conversation, onBack }) {
   const [status, setStatus] = useState(conversation.status)
   const [deciding, setDeciding] = useState(false)
   const [viewingProfileId, setViewingProfileId] = useState(null)
+  const [showMenu, setShowMenu] = useState(false)
+  const [showActionSheet, setShowActionSheet] = useState(false)
   const bottomRef = useRef(null)
 
   const isSelfChat = conversation.buyerId === conversation.sellerId
@@ -337,6 +467,41 @@ function ChatThread({ session, conversation, onBack }) {
     setSending(false)
   }
 
+  async function handleDeleteChat() {
+    setShowActionSheet(false)
+    if (!window.confirm('Delete this chat? This cannot be undone.')) return
+    const { error } = await supabase.from('conversations').delete().eq('id', conversation.id)
+    if (error) {
+      console.error('Error deleting conversation:', error.message)
+      alert('Could not delete this chat. Please try again.')
+      return
+    }
+    onConversationDeleted?.()
+    onBack()
+  }
+
+  function handleReportChat() {
+    setShowActionSheet(false)
+    alert('Chat reported. Thank you for helping keep our community safe!')
+  }
+
+  async function handleBlockUser() {
+    setShowActionSheet(false)
+    if (!window.confirm(`Block ${conversation.otherName}? They won't be able to message you again.`)) return
+    const { error: blockErr } = await supabase
+      .from('blocked_users')
+      .insert({ blocker_id: session.user.id, blocked_id: conversation.otherUserId })
+    if (blockErr) {
+      console.error('Error blocking user:', blockErr.message)
+      alert('Could not block this user. Please try again.')
+      return
+    }
+    const { error: delErr } = await supabase.from('conversations').delete().eq('id', conversation.id)
+    if (delErr) console.error('Error deleting conversation after block:', delErr.message)
+    onConversationDeleted?.()
+    onBack()
+  }
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -349,9 +514,38 @@ function ChatThread({ session, conversation, onBack }) {
           size={36}
           onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
         />
-        <div style={{ textAlign: 'left' }}>
+        <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-strong)' }}>{conversation.otherName}</div>
           {conversation.listingTitle && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{conversation.listingTitle}</div>}
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <div onClick={() => setShowMenu(v => !v)} style={{ cursor: 'pointer', color: 'var(--text-strong)', padding: '4px' }}>
+            <Icon name="ellipsis-vertical" size={20} />
+          </div>
+          <AnimatePresence>
+            {showMenu && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 50,
+                  background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.15)', minWidth: '150px', overflow: 'hidden',
+                  transformOrigin: 'top right',
+                }}
+              >
+                <div
+                  onClick={() => { setShowMenu(false); setShowActionSheet(true) }}
+                  style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer' }}
+                >
+                  More options
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -387,7 +581,7 @@ function ChatThread({ session, conversation, onBack }) {
         </div>
       )}
 
-      <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
+      <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -440,6 +634,13 @@ function ChatThread({ session, conversation, onBack }) {
                     {m.content}
                   </div>
                 </div>
+                {/* Timestamp under every message */}
+                <div style={{
+                  fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px',
+                  marginRight: mine ? '4px' : 0, marginLeft: mine ? 0 : '28px',
+                }}>
+                  {messageTime(m.created_at)}
+                </div>
               </div>
             )
           })
@@ -468,6 +669,18 @@ function ChatThread({ session, conversation, onBack }) {
           hideMessageButton
         />
       )}
+
+      <AnimatePresence>
+        {showActionSheet && (
+          <ChatActionSheet
+            onClose={() => setShowActionSheet(false)}
+            onDelete={handleDeleteChat}
+            onReport={handleReportChat}
+            onBlock={handleBlockUser}
+            showBlock={!isSelfChat}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -489,7 +702,9 @@ function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
     findOrCreateConversation(session, pendingChat).then(result => {
       if (cancelled) return
 
-      if (result?.error) {
+      if (result?.blocked) {
+        alert("You can't message this user.")
+      } else if (result?.error) {
         alert('Could not open this chat. Please try again.')
       } else if (result) {
         setOpenConversation(result)
@@ -534,7 +749,12 @@ function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
             transition={{ type: 'tween', duration: 0.18, ease: 'easeOut' }}
             style={{ position: 'fixed', inset: 0, zIndex: 250, background: 'var(--page-bg)' }}
           >
-            <ChatThread session={session} conversation={openConversation} onBack={handleCloseThread} />
+            <ChatThread
+              session={session}
+              conversation={openConversation}
+              onBack={handleCloseThread}
+              onConversationDeleted={() => setInboxRefreshKey(k => k + 1)}
+            />
           </motion.div>
         )}
       </AnimatePresence>

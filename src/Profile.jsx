@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
@@ -163,6 +164,7 @@ function Profile({ session, onBack }) {
   const [message, setMessage] = useState('')
   const [infoPage, setInfoPage] = useState(null)
   const [confirmModal, setConfirmModal] = useState(null)
+  const [viewingAvatar, setViewingAvatar] = useState(false)
 
   useEffect(() => {
     fetchProfile()
@@ -309,6 +311,10 @@ function Profile({ session, onBack }) {
     setConfirmModal('save')
   }
 
+  function handleAvatarTap() {
+    if (!editMode) setViewingAvatar(true)
+  }
+
   const filteredDepts = DEPARTMENTS.filter(d => d.toLowerCase().includes(deptSearch.toLowerCase()))
   const filteredSkills = allPlatformSkills.filter(s =>
     s.toLowerCase().includes(skillSearch.toLowerCase()) &&
@@ -348,8 +354,10 @@ function Profile({ session, onBack }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', paddingBottom: editMode ? '110px' : '24px' }}>
-      
-      {/* ═══ STICKY HEADER WITH TOP-RIGHT BACK BUTTON ═══ */}
+
+      {/* ═══ STICKY HEADER — close button restyled: neutral color, chevron
+          facing right (this panel closes back toward the right, where it
+          slid in from) instead of a purple left-facing arrow. ═══ */}
       <div style={{
         padding: '16px 20px 12px',
         background: 'var(--card-bg)',
@@ -380,7 +388,6 @@ function Profile({ session, onBack }) {
             </span>
           )}
 
-          {/* Back button — pinned to the right edge of the header */}
           {onBack && (
             <button
               onClick={onBack}
@@ -391,14 +398,14 @@ function Profile({ session, onBack }) {
                 height: '36px',
                 borderRadius: '12px',
                 border: 'none',
-                background: 'var(--app-accent-soft)',
-                color: 'var(--app-accent)',
+                background: 'var(--app-border-soft)',
+                color: 'var(--text-strong)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Icon name="arrowLeft" size={20} color="var(--app-accent)" />
+              <Icon name="chevronRight" size={20} color="var(--text-strong)" />
             </button>
           )}
         </div>
@@ -406,27 +413,37 @@ function Profile({ session, onBack }) {
 
       <div style={{ padding: '16px' }}>
 
-        {/* ═══ HERO — Cover + Avatar + Name ═══ */}
+        {/* ═══ HERO — gradient smoothly fades from accent color into the
+            card background, no hard color division. ═══ */}
         <div style={{ borderRadius: '22px', overflow: 'hidden', border: '1px solid var(--app-border)', boxShadow: 'var(--shadow-card)' }}>
           <div style={{
-            height: '84px',
-            background: 'linear-gradient(135deg, var(--app-accent) 0%, var(--app-accent-dark, var(--app-accent)) 100%)',
-            position: 'relative',
+            height: '96px',
+            background: 'linear-gradient(180deg, var(--app-accent) 0%, var(--card-bg) 100%)',
           }} />
-          <div style={{ background: 'var(--card-bg)', padding: '0 18px 20px', textAlign: 'center', marginTop: '-42px' }}>
-            <label style={{ position: 'relative', cursor: editMode ? 'pointer' : 'default', display: 'inline-block' }}>
-              <div style={{
-                width: '86px', height: '86px', borderRadius: '50%', overflow: 'hidden',
-                background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '4px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-              }}>
+          <div style={{ background: 'var(--card-bg)', padding: '0 18px 20px', textAlign: 'center', marginTop: '-48px' }}>
+            <label style={{ position: 'relative', cursor: 'pointer', display: 'inline-block' }}>
+              <motion.div
+                onClick={handleAvatarTap}
+                whileTap={{ scale: 0.96 }}
+                style={{
+                  width: '86px', height: '86px', borderRadius: '50%', overflow: 'hidden',
+                  background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '4px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                }}
+              >
                 {(avatarPreview || avatarUrl) ? (
-                  <img src={avatarPreview || avatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={(e) => { e.target.style.display = 'none' }} />
+                  <motion.img
+                    layoutId="profile-avatar-image"
+                    src={avatarPreview || avatarUrl}
+                    alt="avatar"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => { e.target.style.display = 'none' }}
+                  />
                 ) : (
                   <span style={{ color: 'var(--app-accent)', fontSize: '26px', fontWeight: 700 }}>{initials}</span>
                 )}
-              </div>
+              </motion.div>
+              {/* Camera badge only appears while actively editing */}
               {editMode && (
                 <div style={{ position: 'absolute', right: '0', bottom: '2px', width: '26px', height: '26px', borderRadius: '9px', background: 'var(--app-accent)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--card-bg)' }}>
                   <Icon name="camera" size={13} />
@@ -437,40 +454,18 @@ function Profile({ session, onBack }) {
 
             {!editMode ? (
               <>
+                {/* Minimal read-only display: name, department, bio only —
+                    no year, verified badge, skills, or social icons. */}
                 <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)', marginTop: '10px' }}>
                   {fullName || 'Your Name'}
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {department || 'No department set'}{year ? ` · Year ${year}` : ''}
-                </div>
+                {department && (
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {department}
+                  </div>
+                )}
                 {bio && (
                   <p style={{ margin: '10px 0 0', fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.55 }}>{bio}</p>
-                )}
-
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '12px', padding: '6px 11px', borderRadius: '999px', background: 'var(--app-accent-soft)', color: 'var(--app-accent)', fontSize: '11.5px', fontWeight: 700 }}>
-                  <Icon name="check" size={11} />
-                  Verified student
-                </div>
-
-                {skills.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', marginTop: '14px' }}>
-                    {skills.map(skill => (
-                      <div key={skill.id} style={{ background: 'var(--page-bg)', border: '1px solid var(--app-border-soft)', borderRadius: '999px', padding: '5px 11px', fontSize: '11.5px', fontWeight: 700, color: 'var(--text-strong)' }}>
-                        {skill.skill_name}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {socialLinks.length > 0 && (
-                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '14px' }}>
-                    {socialLinks.map((link, idx) => (
-                      <a key={idx} href={link.url} target="_blank" rel="noopener noreferrer"
-                        style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'var(--app-accent-soft)', color: 'var(--app-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
-                        <Icon name={platformInfo(link.platform).icon} size={15} />
-                      </a>
-                    ))}
-                  </div>
                 )}
 
                 <button
@@ -495,7 +490,7 @@ function Profile({ session, onBack }) {
           </div>
         </div>
 
-        {/* ═══ EDIT FORM FIELDS ═══ */}
+        {/* ═══ EDIT FORM FIELDS — unchanged, still available while editing ═══ */}
         {editMode && (
           <>
             <div style={cardStyle}>
@@ -669,6 +664,56 @@ function Profile({ session, onBack }) {
           </button>
         </div>
       )}
+
+      {/* ═══ FULLSCREEN AVATAR VIEWER — tap the profile picture to maximize ═══ */}
+      <AnimatePresence>
+        {viewingAvatar && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={() => setViewingAvatar(false)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(10,10,14,0.97)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            {avatarUrl ? (
+              <motion.img
+                layoutId="profile-avatar-image"
+                transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                src={avatarUrl}
+                alt={fullName}
+                onClick={(e) => e.stopPropagation()}
+                style={{ maxWidth: '88%', maxHeight: '78vh', borderRadius: '24px', objectFit: 'contain' }}
+              />
+            ) : (
+              <div style={{
+                width: '180px', height: '180px', borderRadius: '50%',
+                background: 'var(--app-accent-soft)', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <span style={{ fontSize: '56px', fontWeight: 700, color: 'var(--app-accent)' }}>{initials}</span>
+              </div>
+            )}
+
+            <div
+              onClick={() => setViewingAvatar(false)}
+              style={{
+                position: 'absolute', top: '16px', right: '16px',
+                width: '38px', height: '38px', borderRadius: '50%',
+                background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', cursor: 'pointer',
+              }}
+            >
+              <Icon name="x" size={19} color="#fff" />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══ CONFIRMATION MODALS ═══ */}
       {confirmModal === 'save' && (
