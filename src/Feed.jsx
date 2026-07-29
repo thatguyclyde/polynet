@@ -6,21 +6,20 @@ import { FeedSkeleton } from './Skeleton'
 import PublicProfileCard from './PublicProfileCard'
 import { useTheme } from './ThemeContext'
 
-const SCHOOL_GREEN = '#22C55E'
-const OTHER_AMBER = '#F59E0B'
-const FILTER_PURPLE = '#A855F7'
-const LIKE_RED = '#ED4956'
-
 const CATEGORY_STYLES = {
-  school: { label: 'School Related', color: SCHOOL_GREEN, bg: 'rgba(34,197,94,0.14)' },
-  other: { label: 'Other', color: OTHER_AMBER, bg: 'rgba(245,158,11,0.14)' },
+  school: { label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
+  other: { label: 'Other', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
 }
 
 const FILTERS = [
-  { id: 'all', label: 'All', color: FILTER_PURPLE, bg: 'rgba(168,85,247,0.18)' },
-  { id: 'school', label: 'School Related', color: SCHOOL_GREEN, bg: 'rgba(34,197,94,0.14)' },
-  { id: 'other', label: 'Other', color: OTHER_AMBER, bg: 'rgba(245,158,11,0.14)' },
+  { id: 'all', label: 'All', color: '#A855F7', bg: 'rgba(168,85,247,0.18)' },
+  { id: 'school', label: 'School Related', color: '#22C55E', bg: 'rgba(34,197,94,0.14)' },
+  { id: 'other', label: 'Other', color: '#F59E0B', bg: 'rgba(245,158,11,0.14)' },
 ]
+
+const LIKE_RED = '#ED4956'
+const BRAND_PURPLE = '#7C3AED'
+const FUZZY_THRESHOLD = 0.6
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -59,6 +58,23 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
     }
     reader.readAsDataURL(file)
   })
+}
+
+// Character-overlap similarity for misspelling tolerance — counts how many
+// letters of the query can be matched (each used once) against the target
+// word, as a fraction of the query's own length.
+function letterOverlapRatio(query, target) {
+  const q = query.toLowerCase()
+  const remaining = target.toLowerCase().split('')
+  let matches = 0
+  for (const ch of q) {
+    const idx = remaining.indexOf(ch)
+    if (idx !== -1) {
+      matches++
+      remaining.splice(idx, 1)
+    }
+  }
+  return matches / q.length
 }
 
 function Avatar({ url, name, size = 40, onClick }) {
@@ -116,6 +132,134 @@ function CommentButton({ isOpen, count, onClick }) {
   )
 }
 
+function ConfirmSheet({ title, body, confirmLabel, danger, onConfirm, onCancel }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 18px' }} />
+        <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'center' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>{body}</p>
+        <button
+          onClick={onConfirm}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+            background: danger ? '#EF4444' : BRAND_PURPLE, color: '#fff',
+            fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', marginBottom: '10px',
+          }}
+        >
+          {confirmLabel}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px',
+            border: '1px solid var(--app-border-soft)', background: 'transparent',
+            color: 'var(--text-strong)', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </motion.div>
+    </div>
+  )
+}
+
+function ShareSheet({ url, onClose }) {
+  const [copied, setCopied] = useState(false)
+
+  function shareToWhatsApp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent('Check out this post on PolyNet: ' + url)}`, '_blank')
+    onClose()
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => { setCopied(false); onClose() }, 900)
+    } catch {
+      onClose()
+    }
+  }
+
+  async function systemShare() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'PolyNet', text: 'Check out this post on PolyNet', url })
+      } catch {}
+    }
+    onClose()
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 12px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 4px' }} />
+        <h3 style={{ margin: '10px 12px 14px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-strong)' }}>Share post</h3>
+
+        <div onClick={shareToWhatsApp} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(37,211,102,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="whatsapp" size={19} color="#25D366" />
+          </div>
+          <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>WhatsApp</span>
+        </div>
+
+        <div onClick={copyLink} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="link" size={18} color="var(--app-accent)" />
+          </div>
+          <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>{copied ? 'Link copied!' : 'Copy Link'}</span>
+        </div>
+
+        {typeof navigator !== 'undefined' && navigator.share && (
+          <div onClick={systemShare} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="share-2" size={18} color="var(--app-accent)" />
+            </div>
+            <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>More options</span>
+          </div>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
 function Feed({ session, onStartChat }) {
   const { isDark } = useTheme()
   const [posts, setPosts] = useState([])
@@ -145,12 +289,21 @@ function Feed({ session, onStartChat }) {
   const [commentLoading, setCommentLoading] = useState(false)
 
   const [openMenuId, setOpenMenuId] = useState(null)
-  const [savedIds, setSavedIds] = useState(new Set())
+  const [savingImageId, setSavingImageId] = useState(null)
 
   const [viewingPost, setViewingPost] = useState(null)
   const tapTimer = useRef(null)
 
   const [viewingProfileId, setViewingProfileId] = useState(null)
+
+  const [deletePostId, setDeletePostId] = useState(null)
+  const [sharingPost, setSharingPost] = useState(null)
+
+  const [skillSearchOpen, setSkillSearchOpen] = useState(false)
+  const [skillQuery, setSkillQuery] = useState('')
+  const [skillResults, setSkillResults] = useState([])
+  const [skillSearching, setSkillSearching] = useState(false)
+  const [skillSearched, setSkillSearched] = useState(false)
 
   useEffect(() => {
     fetchPosts()
@@ -360,24 +513,47 @@ function Feed({ session, onStartChat }) {
     setCommentLoading(false)
   }
 
-  async function deletePost(postId) {
-    if (window.confirm('Are you sure you want to delete this post?')) {
-      const { error } = await supabase.from('feed_posts').delete().eq('id', postId)
-      if (!error) {
-        setPosts(prev => prev.filter(p => p.id !== postId))
-        setOpenMenuId(null)
-        if (viewingPost?.id === postId) setViewingPost(null)
-      }
+  async function performDeletePost() {
+    const postId = deletePostId
+    setDeletePostId(null)
+    if (!postId) return
+    const { error } = await supabase.from('feed_posts').delete().eq('id', postId)
+    if (!error) {
+      setPosts(prev => prev.filter(p => p.id !== postId))
+      setOpenMenuId(null)
+      if (viewingPost?.id === postId) setViewingPost(null)
+    } else {
+      console.error('Error deleting post:', error.message)
     }
   }
 
-  function toggleSave(postId) {
-    setSavedIds(prev => {
-      const next = new Set(prev)
-      next.has(postId) ? next.delete(postId) : next.add(postId)
-      return next
-    })
+  // Actually downloads the post's image to the user's device.
+  async function handleSaveImage(post) {
     setOpenMenuId(null)
+    if (!post.image_url) {
+      alert("This post doesn't have an image to save.")
+      return
+    }
+    setSavingImageId(post.id)
+    try {
+      const response = await fetch(post.image_url, { mode: 'cors' })
+      if (!response.ok) throw new Error('Fetch failed')
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `polynet-post-${post.id}.jpg`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      console.error('Error downloading image, falling back to opening it:', err)
+      // If the storage bucket blocks cross-origin fetches, open the image
+      // directly so the user can still long-press/save it manually.
+      window.open(post.image_url, '_blank')
+    }
+    setSavingImageId(null)
   }
 
   function reportPost(postId) {
@@ -385,14 +561,10 @@ function Feed({ session, onStartChat }) {
     setOpenMenuId(null)
   }
 
-  function sharePost(postId) {
-    if (navigator.share) {
-      navigator.share({ title: 'Check out this post!', text: 'A post from PolyNet' })
-    } else {
-      alert('Post link copied to clipboard!')
-      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#post-${postId}`)
-    }
+  function openSharePost(post) {
     setOpenMenuId(null)
+    const url = `${window.location.origin}${window.location.pathname}#post-${post.id}`
+    setSharingPost({ ...post, shareUrl: url })
   }
 
   function goToAuthor(authorId) {
@@ -409,10 +581,76 @@ function Feed({ session, onStartChat }) {
     })
   }
 
+  function openSkillSearch() {
+    setSkillSearchOpen(true)
+  }
+
+  function closeSkillSearch() {
+    setSkillSearchOpen(false)
+    setSkillQuery('')
+    setSkillResults([])
+    setSkillSearched(false)
+  }
+
+  // Real substring matches first; if the exact spelling doesn't hit,
+  // fall back to a letter-overlap fuzzy match (>=60% of the typed letters
+  // found in the skill name) so misspellings like "grafics" still find
+  // "graphics".
+  async function runSkillSearch() {
+    const trimmed = skillQuery.trim()
+    if (!trimmed) return
+    setSkillSearching(true)
+    setSkillSearched(true)
+
+    const { data, error } = await supabase
+      .from('skills')
+      .select('user_id, skill_name, profiles(full_name, department, avatar_url)')
+      .limit(1000)
+
+    if (error) {
+      console.error('Error searching skills:', error.message)
+      setSkillResults([])
+      setSkillSearching(false)
+      return
+    }
+
+    const lowerQuery = trimmed.toLowerCase()
+    const scored = (data || [])
+      .filter(row => row.user_id !== session.user.id)
+      .map(row => {
+        const skillLower = row.skill_name.toLowerCase()
+        const isSubstringMatch = skillLower.includes(lowerQuery)
+        const overlap = letterOverlapRatio(trimmed, row.skill_name)
+        const matches = isSubstringMatch || overlap >= FUZZY_THRESHOLD
+        return { row, matches, score: isSubstringMatch ? 1 : overlap }
+      })
+      .filter(r => r.matches)
+      .sort((a, b) => b.score - a.score)
+
+    const byUser = new Map()
+    scored.forEach(({ row }) => {
+      if (!byUser.has(row.user_id)) {
+        byUser.set(row.user_id, {
+          userId: row.user_id,
+          name: row.profiles?.full_name || 'PolyNet Student',
+          department: row.profiles?.department || '',
+          avatar: row.profiles?.avatar_url || null,
+          matchedSkill: row.skill_name,
+        })
+      }
+    })
+
+    setSkillResults(Array.from(byUser.values()))
+    setSkillSearching(false)
+  }
+
+  function openResultProfile(userId) {
+    closeSkillSearch()
+    setViewingProfileId(userId)
+  }
+
   const filteredPosts = activeFilter === 'all' ? posts : posts.filter(p => p.post_type === activeFilter)
 
-  // Theme-aware header + divider values — black only in dark mode, matches
-  // the current theme in light mode instead of staying black regardless.
   const headerBg = isDark ? '#000000' : '#FFFFFF'
   const headerSubtitleColor = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
   const filterInactiveBorder = isDark ? 'rgba(255,255,255,0.18)' : 'var(--app-border-soft)'
@@ -420,14 +658,8 @@ function Feed({ session, onStartChat }) {
   const postDivider = isDark ? '#000000' : 'var(--app-border)'
 
   return (
-    // NOTE: no `overflow: hidden` here anymore — that was the bug breaking
-    // the sticky header. An ancestor with overflow:hidden between a sticky
-    // element and its real scrolling container (the motion.div in App.jsx)
-    // prevents position:sticky from working at all.
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative' }}>
 
-      {/* Header — solid, theme-matched (black in dark mode, white in light
-          mode), truly sticky to the top of the scrolling feed. */}
       <div style={{
         padding: '18px 20px 14px',
         background: headerBg,
@@ -454,27 +686,41 @@ function Feed({ session, onStartChat }) {
           </p>
         </div>
 
-        {/* Filter row — All / School Related / Other. Smaller, left-aligned. */}
-        <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '6px', marginTop: '12px', overflowX: 'auto', paddingBottom: '2px' }}>
-          {FILTERS.map(f => {
-            const isActive = activeFilter === f.id
-            return (
-              <div
-                key={f.id}
-                onClick={() => setActiveFilter(f.id)}
-                style={{
-                  padding: '5px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: 700,
-                  whiteSpace: 'nowrap', cursor: 'pointer',
-                  border: isActive ? `1.5px solid ${f.color}` : `1.5px solid ${filterInactiveBorder}`,
-                  background: isActive ? f.bg : 'transparent',
-                  color: isActive ? f.color : filterInactiveText,
-                  transition: 'border-color 0.15s, background 0.15s, color 0.15s',
-                }}
-              >
-                {f.label}
-              </div>
-            )
-          })}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px' }}>
+          <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '2px', flex: 1 }}>
+            {FILTERS.map(f => {
+              const isActive = activeFilter === f.id
+              return (
+                <div
+                  key={f.id}
+                  onClick={() => setActiveFilter(f.id)}
+                  style={{
+                    padding: '4px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
+                    whiteSpace: 'nowrap', cursor: 'pointer',
+                    border: isActive ? `1.5px solid ${f.color}` : `1.5px solid ${filterInactiveBorder}`,
+                    background: isActive ? f.bg : 'transparent',
+                    color: isActive ? f.color : filterInactiveText,
+                    transition: 'border-color 0.15s, background 0.15s, color 0.15s',
+                  }}
+                >
+                  {f.label}
+                </div>
+              )
+            })}
+          </div>
+
+          <div
+            onClick={openSkillSearch}
+            style={{
+              flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px',
+              padding: '5px 10px', borderRadius: '999px',
+              background: BRAND_PURPLE, cursor: 'pointer',
+              boxShadow: '0 3px 10px rgba(124,58,237,0.35)',
+            }}
+          >
+            <Icon name="search" size={13} color="#fff" />
+            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#fff' }}>Skills</span>
+          </div>
         </div>
       </div>
 
@@ -493,6 +739,7 @@ function Feed({ session, onStartChat }) {
           const comments = commentsByPost[post.id] || []
           const isOwnPost = post.author_id === session.user.id
           const isViewingThis = viewingPost?.id === post.id
+          const hasImage = !!post.image_url
 
           return (
             <motion.div key={post.id} layout="position" style={{ borderBottom: `8px solid ${postDivider}` }}>
@@ -529,7 +776,7 @@ function Feed({ session, onStartChat }) {
                   )}
                   {isSchoolRelated && (
                     <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }} title="School related">
-                      <Icon name="school" size={15} color={SCHOOL_GREEN} fill="none" />
+                      <Icon name="school" size={14} color="var(--success)" fill="none" />
                     </div>
                   )}
                 </div>
@@ -551,7 +798,7 @@ function Feed({ session, onStartChat }) {
                       }}>
                         {isOwnPost && (
                           <div
-                            onClick={() => deletePost(post.id)}
+                            onClick={() => { setOpenMenuId(null); setDeletePostId(post.id) }}
                             style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                           >
                             <Icon name="trash-2" size={14} />
@@ -559,11 +806,11 @@ function Feed({ session, onStartChat }) {
                           </div>
                         )}
                         <div
-                          onClick={() => toggleSave(post.id)}
-                          style={{ padding: '12px 16px', fontSize: '13px', color: savedIds.has(post.id) ? 'var(--app-accent)' : 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          onClick={() => handleSaveImage(post)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                         >
                           <Icon name="download" size={14} />
-                          {savedIds.has(post.id) ? 'Saved' : 'Save'}
+                          {savingImageId === post.id ? 'Saving...' : 'Save Image'}
                         </div>
                         {!isOwnPost && (
                           <div
@@ -575,7 +822,7 @@ function Feed({ session, onStartChat }) {
                           </div>
                         )}
                         <div
-                          onClick={() => sharePost(post.id)}
+                          onClick={() => openSharePost(post)}
                           style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
                         >
                           <Icon name="share-2" size={14} />
@@ -588,9 +835,16 @@ function Feed({ session, onStartChat }) {
               </div>
 
               {post.content && (
-                <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
-                  <span>{post.content}</span>
-                </div>
+                hasImage ? (
+                  <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
+                    <span>{post.content}</span>
+                  </div>
+                ) : (
+                  // No image — bold, headline-style, more gravitas (matches News's announcement look)
+                  <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800 }}>
+                    <span>{post.content}</span>
+                  </div>
+                )
               )}
 
               {post.image_url && (
@@ -994,7 +1248,7 @@ function Feed({ session, onStartChat }) {
                     >
                       {viewingPost.author_id === session.user.id && (
                         <div
-                          onClick={() => deletePost(viewingPost.id)}
+                          onClick={() => { setOpenMenuId(null); setDeletePostId(viewingPost.id) }}
                           style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                         >
                           <Icon name="trash-2" size={14} />
@@ -1002,11 +1256,11 @@ function Feed({ session, onStartChat }) {
                         </div>
                       )}
                       <div
-                        onClick={() => toggleSave(viewingPost.id)}
-                        style={{ padding: '12px 16px', fontSize: '13px', color: savedIds.has(viewingPost.id) ? 'var(--app-accent)' : 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        onClick={() => handleSaveImage(viewingPost)}
+                        style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                       >
                         <Icon name="download" size={14} />
-                        {savedIds.has(viewingPost.id) ? 'Saved' : 'Save'}
+                        {savingImageId === viewingPost.id ? 'Saving...' : 'Save Image'}
                       </div>
                       {viewingPost.author_id !== session.user.id && (
                         <div
@@ -1018,7 +1272,7 @@ function Feed({ session, onStartChat }) {
                         </div>
                       )}
                       <div
-                        onClick={() => sharePost(viewingPost.id)}
+                        onClick={() => openSharePost(viewingPost)}
                         style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
                       >
                         <Icon name="share-2" size={14} />
@@ -1042,11 +1296,145 @@ function Feed({ session, onStartChat }) {
         />
       )}
 
+      <AnimatePresence>
+        {deletePostId && (
+          <ConfirmSheet
+            title="Delete this post?"
+            body="This will remove it permanently for everyone on PolyNet. This can't be undone."
+            confirmLabel="Delete Post"
+            danger
+            onConfirm={performDeletePost}
+            onCancel={() => setDeletePostId(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sharingPost && (
+          <ShareSheet url={sharingPost.shareUrl} onClose={() => setSharingPost(null)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {skillSearchOpen && (
+          <motion.div
+            key="skill-search-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={closeSkillSearch}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 350,
+              background: 'rgba(0,0,0,0.5)',
+              display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            }}
+          >
+            <motion.div
+              onClick={e => e.stopPropagation()}
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+              style={{
+                width: '100%', maxWidth: '480px', height: '82vh',
+                background: 'var(--card-bg)', borderRadius: '26px 26px 0 0',
+                display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              }}
+            >
+              <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', position: 'absolute', left: '50%', top: '8px', transform: 'translateX(-50%)' }} />
+                <div style={{ flex: 1, marginTop: '6px' }}>
+                  <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)' }}>Find by Skill</h2>
+                  <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: 'var(--text-muted)' }}>e.g. plumbing, graphic design, tutoring</p>
+                </div>
+                <div onClick={closeSkillSearch} style={{ cursor: 'pointer', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  <Icon name="x" size={20} />
+                </div>
+              </div>
+
+              <div style={{ padding: '14px 20px', display: 'flex', gap: '8px' }}>
+                <input
+                  value={skillQuery}
+                  onChange={e => setSkillQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') runSkillSearch() }}
+                  placeholder="Search a skill..."
+                  autoFocus
+                  style={{
+                    flex: 1, padding: '11px 14px', borderRadius: '12px',
+                    border: '1.5px solid var(--app-border)', background: 'var(--input-bg)',
+                    color: 'var(--text-strong)', fontSize: '13.5px', outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+                <button
+                  onClick={runSkillSearch}
+                  disabled={!skillQuery.trim() || skillSearching}
+                  style={{
+                    padding: '0 18px', borderRadius: '12px', border: 'none',
+                    background: skillQuery.trim() ? BRAND_PURPLE : 'var(--app-border-soft)',
+                    color: '#fff', fontWeight: 700, fontSize: '13.5px', cursor: skillQuery.trim() ? 'pointer' : 'default',
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                  }}
+                >
+                  <Icon name="search" size={15} color="#fff" />
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 20px' }}>
+                {skillSearching ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '50px 0' }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      {[0, 1, 2].map(i => (
+                        <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: BRAND_PURPLE, animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                      ))}
+                    </div>
+                  </div>
+                ) : skillSearched && skillResults.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '13.5px' }}>No students found with that skill yet.</p>
+                  </div>
+                ) : (
+                  skillResults.map(r => (
+                    <div
+                      key={r.userId}
+                      onClick={() => openResultProfile(r.userId)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '12px',
+                        padding: '12px 4px', cursor: 'pointer',
+                        borderBottom: '1px solid var(--app-border-soft)',
+                      }}
+                    >
+                      <Avatar url={r.avatar} name={r.name} size={46} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-strong)' }}>{r.name}</div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>{r.department}</div>
+                        <div style={{
+                          display: 'inline-block', marginTop: '5px', padding: '3px 9px',
+                          borderRadius: '999px', background: 'var(--app-accent-soft)',
+                          color: 'var(--app-accent)', fontSize: '11px', fontWeight: 700,
+                        }}>
+                          {r.matchedSkill}
+                        </div>
+                      </div>
+                      <Icon name="chevronRight" size={16} color="var(--text-muted)" />
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
+        }
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.2; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.2); }
         }
       `}</style>
     </div>

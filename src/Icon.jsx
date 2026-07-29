@@ -6,7 +6,7 @@ import {
   Globe, MessageSquare, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,
   MoreHorizontal, MoreVertical, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
   Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox, BookOpen, GraduationCap,
-  Megaphone, BadgeCheck, Shirt, Armchair, Wrench, Package
+  Megaphone, BadgeCheck, Shirt, Armchair, Wrench, Package, Link2
 } from 'lucide-react'
 
 function TikTokIcon({ size, color }) {
