@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Newspaper, Store, MessageCircle, UserCircle } from 'lucide-react'
+import { Home, Newspaper, Store, MessageCircle, UserCircle, WifiOff } from 'lucide-react'
 import { supabase } from './supabase'
 import SplashScreen from './SplashScreen'
 import SignUp from './SignUp'
@@ -42,11 +42,70 @@ function ComingSoonDots() {
   )
 }
 
+// Shown when a profile fetch genuinely fails (no connection), instead of
+// silently falling back to the Onboarding screen. Retry re-runs the same
+// check without a full page reload.
+function NetworkErrorScreen({ onRetry, retrying }) {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', background: 'var(--page-bg)',
+      padding: '24px', textAlign: 'center',
+    }}>
+      <div style={{
+        width: '68px', height: '68px', borderRadius: '50%',
+        background: 'var(--app-accent-soft)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', marginBottom: '20px',
+      }}>
+        <WifiOff size={30} color="var(--app-accent)" />
+      </div>
+      <h2 style={{ margin: '0 0 8px', fontSize: '17px', fontWeight: 800, color: 'var(--text-strong)' }}>
+        No Connection
+      </h2>
+      <p style={{ margin: '0 0 24px', fontSize: '13.5px', color: 'var(--text-muted)', maxWidth: '260px', lineHeight: 1.5 }}>
+        We couldn't reach PolyNet. Check your internet connection and try again.
+      </p>
+      <button
+        onClick={onRetry}
+        disabled={retrying}
+        style={{
+          padding: '13px 32px', borderRadius: '14px', border: 'none',
+          background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '14.5px',
+          cursor: retrying ? 'default' : 'pointer', boxShadow: '0 6px 20px rgba(124,58,237,0.35)',
+          display: 'flex', alignItems: 'center', gap: '8px',
+        }}
+      >
+        {retrying ? (
+          <>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#fff', animation: `dotPulse 1.2s ease-in-out ${i * 0.15}s infinite` }} />
+              ))}
+            </div>
+            Retrying...
+          </>
+        ) : (
+          'Retry'
+        )}
+      </button>
+      <style>{`
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.3; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.15); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 function App() {
   const [splash, setSplash] = useState(true)
   const [session, setSession] = useState(null)
-  const [onboarded, setOnboarded] = useState(false)
+  // null = not yet known (still checking or errored), true/false = confirmed
+  const [onboarded, setOnboarded] = useState(null)
   const [checking, setChecking] = useState(true)
+  const [networkError, setNetworkError] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const [page, setPage] = useState('feed')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -57,46 +116,56 @@ function App() {
   const [myAvatar, setMyAvatar] = useState(null)
 
   const [pendingChat, setPendingChat] = useState(null)
-  // Whether a chat thread is fullscreen-open — hides the bottom nav and the
-  // top-right profile avatar while true, leaving only the thread's own back button.
   const [chatThreadOpen, setChatThreadOpen] = useState(false)
-  // Whether a PolyMart listing detail view is open — same hiding behavior for the avatar.
   const [listingDetailOpen, setListingDetailOpen] = useState(false)
 
-  // Purple unread-activity dots on the News and Chats bottom-nav icons
   const [hasUnreadChats, setHasUnreadChats] = useState(false)
   const [hasUnreadNews, setHasUnreadNews] = useState(false)
 
-  useEffect(() => {
-    const checkUserProfile = async (userSession) => {
-      if (!userSession) {
-        setChecking(false)
-        return
-      }
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name, department, year_of_study, avatar_url')
-          .eq('id', userSession.user.id)
-          .maybeSingle()
+  const checkUserProfile = async (userSession) => {
+    if (!userSession) {
+      setChecking(false)
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name, department, year_of_study, avatar_url')
+        .eq('id', userSession.user.id)
+        .maybeSingle()
 
-        if (data && data.full_name && data.department && data.year_of_study) {
-          setOnboarded(true)
-        } else {
-          setOnboarded(false)
-        }
-        if (data?.avatar_url) setMyAvatar(data.avatar_url)
+      if (error) throw error
+
+      setNetworkError(false)
+      if (data && data.full_name && data.department && data.year_of_study) {
+        setOnboarded(true)
+      } else {
+        setOnboarded(false)
+      }
+      if (data?.avatar_url) setMyAvatar(data.avatar_url)
+    } catch (err) {
+      // A genuine failure (no connection, DNS, etc.) — do NOT assume
+      // "not onboarded". Surface a real network error screen instead.
+      console.error('Error fetching profile:', err)
+      setNetworkError(true)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  useEffect(() => {
+    async function init() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        setSession(session)
+        await checkUserProfile(session)
       } catch (err) {
-        console.error('Error fetching profile:', err)
-      } finally {
+        console.error('Error getting session:', err)
+        setNetworkError(true)
         setChecking(false)
       }
     }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      checkUserProfile(session)
-    })
+    init()
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
@@ -111,8 +180,20 @@ function App() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  // Poll for unread chat messages and unread news, so the bottom nav can show
-  // a small purple dot on the relevant tab icon before the user opens it.
+  async function handleRetry() {
+    setRetrying(true)
+    setNetworkError(false)
+    try {
+      const { data: { session: freshSession } } = await supabase.auth.getSession()
+      setSession(freshSession)
+      await checkUserProfile(freshSession)
+    } catch (err) {
+      console.error('Retry failed:', err)
+      setNetworkError(true)
+    }
+    setRetrying(false)
+  }
+
   useEffect(() => {
     if (!session) return
 
@@ -203,8 +284,9 @@ function App() {
 
   if (splash) return <SplashScreen onDone={() => setSplash(false)} />
   if (checking) return <ComingSoonDots />
+  if (networkError) return <NetworkErrorScreen onRetry={handleRetry} retrying={retrying} />
 
-  if (session && !onboarded) {
+  if (session && onboarded === false) {
     return <Onboarding session={session} onComplete={() => setOnboarded(true)} />
   }
 
@@ -212,7 +294,7 @@ function App() {
     return <SignUp onSwitchToLogin={() => setAuthView('login')} />
   }
 
-  if (session && onboarded) {
+  if (session && onboarded === true) {
     const hideChrome = chatThreadOpen || listingDetailOpen
 
     return (
@@ -230,8 +312,6 @@ function App() {
           }
         `}</style>
 
-        {/* Global top-right profile avatar trigger — hidden while a chat
-            thread or a PolyMart listing detail view is open */}
         {!hideChrome && (
           <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
@@ -257,7 +337,6 @@ function App() {
           </div>
         )}
 
-        {/* Drag-following main page container */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: chatThreadOpen ? 0 : '70px' }}>
           <motion.div
             key={page}
@@ -291,7 +370,6 @@ function App() {
           </motion.div>
         </div>
 
-        {/* Bottom Navigation — hidden while a chat thread or listing detail is open */}
         {!hideChrome && (
           <div style={{
             position: 'fixed',
@@ -354,7 +432,6 @@ function App() {
           </div>
         )}
 
-        {/* Profile Slide-Over */}
         <AnimatePresence>
           {showProfile && (
             <>

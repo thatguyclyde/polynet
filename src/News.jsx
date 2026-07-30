@@ -6,6 +6,7 @@ import { NewsSkeleton } from './Skeleton'
 import { useTheme } from './ThemeContext'
 
 const LIKE_ACCENT = 'var(--app-accent)'
+const DISLIKE_COLOR = '#EF4444'
 const VERIFIED_BLUE = '#1D9BF0'
 const POST_EDGE_PURPLE = '#7C3AED'
 
@@ -93,6 +94,31 @@ function LikeButton({ isLiked, count, pulseKey, onClick }) {
   )
 }
 
+function DislikeButton({ isDisliked, count, pulseKey, onClick }) {
+  return (
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+      <motion.div
+        key={pulseKey}
+        initial={{ scale: 1 }}
+        animate={{ scale: isDisliked ? [1, 1.3, 0.9, 1.08, 1] : 1 }}
+        transition={{ duration: 0.4, ease: 'easeInOut' }}
+        whileTap={{ scale: 0.8 }}
+        style={{ display: 'flex' }}
+      >
+        <Icon
+          name="thumbsDown"
+          size={19}
+          color={isDisliked ? DISLIKE_COLOR : 'var(--text-muted)'}
+          fill={isDisliked ? DISLIKE_COLOR : 'none'}
+        />
+      </motion.div>
+      <span style={{ fontWeight: 700, fontSize: '13px', color: isDisliked ? DISLIKE_COLOR : 'var(--text-muted)' }}>
+        {count > 0 ? count : ''}
+      </span>
+    </div>
+  )
+}
+
 function News({ session }) {
   const { isDark } = useTheme()
   const [articles, setArticles] = useState([])
@@ -112,23 +138,43 @@ function News({ session }) {
   const [likeCounts, setLikeCounts] = useState({})
   const [likePulse, setLikePulse] = useState({})
 
+  const [dislikedIds, setDislikedIds] = useState(new Set())
+  const [dislikeCounts, setDislikeCounts] = useState({})
+  const [dislikePulse, setDislikePulse] = useState({})
+
   const [openMenuId, setOpenMenuId] = useState(null)
   const [viewingArticle, setViewingArticle] = useState(null)
   const tapTimer = useRef(null)
 
+  // The read timestamp from BEFORE this visit — anything newer than this
+  // gets the purple "new" edge. Stays null until initReadState resolves,
+  // so nothing is marked new prematurely on first render.
+  const [unreadThreshold, setUnreadThreshold] = useState(undefined) // undefined = not yet loaded
+
   useEffect(() => {
+    initReadState()
     fetchArticles()
     fetchMyLikes()
-    markNewsAsRead()
+    fetchMyDislikes()
   }, [])
 
-  // Records that this user has seen News as of now, so the purple unread
-  // dot on the bottom-nav News tab clears once they open this screen.
-  async function markNewsAsRead() {
-    const { error } = await supabase
+  // Captures the previous last_read_at (used as the "new post" cutoff for
+  // this visit), then updates it to now — so next visit, nothing from this
+  // session is considered new anymore.
+  async function initReadState() {
+    const { data, error } = await supabase
+      .from('news_reads')
+      .select('last_read_at')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+    if (error) console.error('Error reading news read-state:', error.message)
+
+    setUnreadThreshold(data?.last_read_at || null)
+
+    const { error: upsertErr } = await supabase
       .from('news_reads')
       .upsert({ user_id: session.user.id, last_read_at: new Date().toISOString() })
-    if (error) console.error('Error marking news as read:', error.message)
+    if (upsertErr) console.error('Error updating news read-state:', upsertErr.message)
   }
 
   async function fetchMyLikes() {
@@ -139,6 +185,14 @@ function News({ session }) {
     if (data) setLikedIds(new Set(data.map(r => r.article_id)))
   }
 
+  async function fetchMyDislikes() {
+    const { data } = await supabase
+      .from('news_dislikes')
+      .select('article_id')
+      .eq('user_id', session.user.id)
+    if (data) setDislikedIds(new Set(data.map(r => r.article_id)))
+  }
+
   async function fetchArticles() {
     setLoading(true)
     const { data, error } = await supabase
@@ -146,7 +200,8 @@ function News({ session }) {
       .select(`
         id, title, body, image_url, created_at, author_id,
         profiles(full_name),
-        likes:news_likes(count)
+        likes:news_likes(count),
+        dislikes:news_dislikes(count)
       `)
       .order('created_at', { ascending: false })
       .limit(30)
@@ -155,11 +210,14 @@ function News({ session }) {
 
     if (data) {
       setArticles(data)
-      const nextCounts = {}
+      const nextLikeCounts = {}
+      const nextDislikeCounts = {}
       data.forEach(a => {
-        nextCounts[a.id] = a.likes?.[0]?.count ?? 0
+        nextLikeCounts[a.id] = a.likes?.[0]?.count ?? 0
+        nextDislikeCounts[a.id] = a.dislikes?.[0]?.count ?? 0
       })
-      setLikeCounts(nextCounts)
+      setLikeCounts(nextLikeCounts)
+      setDislikeCounts(nextDislikeCounts)
     }
     setLoading(false)
   }
@@ -221,6 +279,7 @@ function News({ session }) {
 
   async function toggleLike(articleId) {
     const alreadyLiked = likedIds.has(articleId)
+    const alreadyDisliked = dislikedIds.has(articleId)
 
     setLikedIds(prev => {
       const next = new Set(prev)
@@ -233,6 +292,18 @@ function News({ session }) {
     }))
     if (!alreadyLiked) {
       setLikePulse(prev => ({ ...prev, [articleId]: (prev[articleId] || 0) + 1 }))
+    }
+
+    // Liking clears an existing dislike (mutual exclusivity)
+    if (!alreadyLiked && alreadyDisliked) {
+      setDislikedIds(prev => {
+        const next = new Set(prev)
+        next.delete(articleId)
+        return next
+      })
+      setDislikeCounts(prev => ({ ...prev, [articleId]: Math.max(0, (prev[articleId] || 0) - 1) }))
+      const { error } = await supabase.from('news_dislikes').delete().eq('article_id', articleId).eq('user_id', session.user.id)
+      if (error) console.error('Error clearing dislike:', error.message)
     }
 
     if (alreadyLiked) {
@@ -258,6 +329,62 @@ function News({ session }) {
           return next
         })
         setLikeCounts(prev => ({ ...prev, [articleId]: Math.max(0, (prev[articleId] || 0) - 1) }))
+      }
+    }
+  }
+
+  async function toggleDislike(articleId) {
+    const alreadyDisliked = dislikedIds.has(articleId)
+    const alreadyLiked = likedIds.has(articleId)
+
+    setDislikedIds(prev => {
+      const next = new Set(prev)
+      alreadyDisliked ? next.delete(articleId) : next.add(articleId)
+      return next
+    })
+    setDislikeCounts(prev => ({
+      ...prev,
+      [articleId]: Math.max(0, (prev[articleId] || 0) + (alreadyDisliked ? -1 : 1)),
+    }))
+    if (!alreadyDisliked) {
+      setDislikePulse(prev => ({ ...prev, [articleId]: (prev[articleId] || 0) + 1 }))
+    }
+
+    // Disliking clears an existing like (mutual exclusivity)
+    if (!alreadyDisliked && alreadyLiked) {
+      setLikedIds(prev => {
+        const next = new Set(prev)
+        next.delete(articleId)
+        return next
+      })
+      setLikeCounts(prev => ({ ...prev, [articleId]: Math.max(0, (prev[articleId] || 0) - 1) }))
+      const { error } = await supabase.from('news_likes').delete().eq('article_id', articleId).eq('user_id', session.user.id)
+      if (error) console.error('Error clearing like:', error.message)
+    }
+
+    if (alreadyDisliked) {
+      const { error } = await supabase
+        .from('news_dislikes')
+        .delete()
+        .eq('article_id', articleId)
+        .eq('user_id', session.user.id)
+      if (error) {
+        console.error('Un-dislike failed:', error.message)
+        setDislikedIds(prev => new Set(prev).add(articleId))
+        setDislikeCounts(prev => ({ ...prev, [articleId]: (prev[articleId] || 0) + 1 }))
+      }
+    } else {
+      const { error } = await supabase
+        .from('news_dislikes')
+        .insert({ article_id: articleId, user_id: session.user.id })
+      if (error) {
+        console.error('Dislike failed:', error.message)
+        setDislikedIds(prev => {
+          const next = new Set(prev)
+          next.delete(articleId)
+          return next
+        })
+        setDislikeCounts(prev => ({ ...prev, [articleId]: Math.max(0, (prev[articleId] || 0) - 1) }))
       }
     }
   }
@@ -537,7 +664,7 @@ function News({ session }) {
         )}
       </AnimatePresence>
 
-      {loading ? <NewsSkeleton /> : (
+      {loading || unreadThreshold === undefined ? <NewsSkeleton /> : (
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {articles.map(article => {
           const hasImage = !!article.image_url
@@ -545,8 +672,15 @@ function News({ session }) {
           const preview = article.body?.length > 140 && !isExpanded ? article.body.slice(0, 140) + '...' : article.body
           const isOwnArticle = article.author_id === session.user.id
           const isLiked = likedIds.has(article.id)
+          const isDisliked = dislikedIds.has(article.id)
           const isViewingThis = viewingArticle?.id === article.id
           const posterName = article.profiles?.full_name || 'PolyNet Admin'
+
+          // Purple edge = unread indicator: only for posts newer than the
+          // read-state captured at the start of THIS visit. Once you leave
+          // News, the read-state has already moved forward, so on your next
+          // visit these same posts no longer qualify.
+          const isNew = unreadThreshold === null || new Date(article.created_at) > new Date(unreadThreshold)
 
           return (
             <div
@@ -554,7 +688,7 @@ function News({ session }) {
               style={{
                 background: 'var(--card-bg)',
                 borderRadius: '22px',
-                border: `1.5px solid ${POST_EDGE_PURPLE}`,
+                border: isNew ? `1.5px solid ${POST_EDGE_PURPLE}` : '1px solid var(--app-border)',
                 overflow: 'hidden',
                 boxShadow: 'var(--shadow-card)',
               }}
@@ -704,12 +838,20 @@ function News({ session }) {
                       {timeAgo(article.created_at)}
                     </div>
                   </div>
-                  <LikeButton
-                    isLiked={isLiked}
-                    count={likeCounts[article.id] || 0}
-                    pulseKey={likePulse[article.id] || 0}
-                    onClick={() => toggleLike(article.id)}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <LikeButton
+                      isLiked={isLiked}
+                      count={likeCounts[article.id] || 0}
+                      pulseKey={likePulse[article.id] || 0}
+                      onClick={() => toggleLike(article.id)}
+                    />
+                    <DislikeButton
+                      isDisliked={isDisliked}
+                      count={dislikeCounts[article.id] || 0}
+                      pulseKey={dislikePulse[article.id] || 0}
+                      onClick={() => toggleDislike(article.id)}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -839,12 +981,20 @@ function News({ session }) {
               <span style={{ color: '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>
                 {viewingArticle.body || 'PolyNet News'}
               </span>
-              <LikeButton
-                isLiked={likedIds.has(viewingArticle.id)}
-                count={likeCounts[viewingArticle.id] || 0}
-                pulseKey={likePulse[viewingArticle.id] || 0}
-                onClick={() => toggleLike(viewingArticle.id)}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <LikeButton
+                  isLiked={likedIds.has(viewingArticle.id)}
+                  count={likeCounts[viewingArticle.id] || 0}
+                  pulseKey={likePulse[viewingArticle.id] || 0}
+                  onClick={() => toggleLike(viewingArticle.id)}
+                />
+                <DislikeButton
+                  isDisliked={dislikedIds.has(viewingArticle.id)}
+                  count={dislikeCounts[viewingArticle.id] || 0}
+                  pulseKey={dislikePulse[viewingArticle.id] || 0}
+                  onClick={() => toggleDislike(viewingArticle.id)}
+                />
+              </div>
             </div>
           </motion.div>
         )}
