@@ -75,9 +75,6 @@ async function isBlockedEitherWay(myId, otherId) {
   return (data || []).length > 0
 }
 
-// Attaches a product-reference message to this specific conversation, once
-// per distinct listing. Each product gets its own reference message with
-// its own thumbnail — never shared or overwritten by a different product.
 async function insertListingReferenceIfNeeded(conversationId, myId, listingId, listingTitle, listingImage) {
   if (!listingId) return
 
@@ -92,7 +89,7 @@ async function insertListingReferenceIfNeeded(conversationId, myId, listingId, l
     console.error('Error checking existing listing reference:', checkErr.message)
     return
   }
-  if ((existingRef || []).length > 0) return // already referenced in this conversation
+  if ((existingRef || []).length > 0) return
 
   const { error: insertErr } = await supabase.from('chat_messages').insert({
     conversation_id: conversationId,
@@ -114,6 +111,10 @@ async function insertListingReferenceIfNeeded(conversationId, myId, listingId, l
   }).eq('id', conversationId)
 }
 
+// Creates a conversation, and gracefully recovers if a race condition means
+// one was created by a concurrent request a split second earlier — the
+// unique DB index guarantees only one row per pair can ever exist, so on
+// conflict we just re-fetch and use that instead of erroring out.
 async function findOrCreateConversation(session, pendingChat) {
   const { listingId = null, sellerId, sellerName, sellerAvatar = null, listingImage = null, listingTitle = null } = pendingChat
   const myId = session.user.id
@@ -141,10 +142,22 @@ async function findOrCreateConversation(session, pendingChat) {
       .single()
 
     if (insertErr) {
-      console.error('Error creating conversation:', insertErr.message)
-      return { error: true }
+      if (insertErr.code === '23505') {
+        // Someone else's request beat us to it by milliseconds — fetch the
+        // row that actually exists now instead of failing.
+        const { data: recovered, error: recoverErr } = await findExistingDirectConversation(myId, sellerId)
+        if (recoverErr || !recovered) {
+          console.error('Error recovering from duplicate conversation conflict:', recoverErr?.message)
+          return { error: true }
+        }
+        conversation = recovered
+      } else {
+        console.error('Error creating conversation:', insertErr.message)
+        return { error: true }
+      }
+    } else {
+      conversation = created
     }
-    conversation = created
   }
   if (!conversation) return { error: true }
 
@@ -170,6 +183,27 @@ function isUnreadForMe(c, myId) {
   const myLastRead = myId === c.buyer_id ? c.buyer_last_read_at : c.seller_last_read_at
   if (!myLastRead) return true
   return new Date(c.last_message_at) > new Date(myLastRead)
+}
+
+// Deletes a conversation and verifies the row was actually removed — if RLS
+// silently blocks it (zero rows affected, no thrown error), this surfaces
+// that as a real failure instead of pretending it worked.
+async function deleteConversationVerified(conversationId) {
+  const { data, error } = await supabase
+    .from('conversations')
+    .delete()
+    .eq('id', conversationId)
+    .select('id')
+
+  if (error) {
+    console.error('Error deleting conversation:', error.message)
+    return { ok: false }
+  }
+  if (!data || data.length === 0) {
+    console.error('Delete affected 0 rows — likely blocked by RLS permissions.')
+    return { ok: false }
+  }
+  return { ok: true }
 }
 
 function ChatActionSheet({ onClose, onDelete, onReport, onBlock, showBlock }) {
@@ -221,6 +255,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionSheetFor, setActionSheetFor] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   const pressTimer = useRef(null)
   const longPressTriggered = useRef(false)
@@ -291,13 +326,15 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
     if (!c) return
     setActionSheetFor(null)
     if (!window.confirm('Delete this chat? This cannot be undone.')) return
-    const { error } = await supabase.from('conversations').delete().eq('id', c.id)
-    if (error) {
-      console.error('Error deleting conversation:', error.message)
+    setDeleting(true)
+    const result = await deleteConversationVerified(c.id)
+    setDeleting(false)
+    if (!result.ok) {
       alert('Could not delete this chat. Please try again.')
-    } else {
-      setConversations(prev => prev.filter(x => x.id !== c.id))
+      fetchConversations(false) // re-sync in case it was a false local removal
+      return
     }
+    setConversations(prev => prev.filter(x => x.id !== c.id))
   }
 
   function handleReport() {
@@ -465,10 +502,13 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   async function deleteRequest() {
     if (!window.confirm('Delete this message request? This cannot be undone.')) return
     setDeciding(true)
-    const { error } = await supabase.from('conversations').delete().eq('id', conversation.id)
+    const result = await deleteConversationVerified(conversation.id)
     setDeciding(false)
-    if (!error) onBack()
-    else console.error('Error deleting request:', error.message)
+    if (!result.ok) {
+      alert('Could not delete this request. Please try again.')
+      return
+    }
+    onBack()
   }
 
   async function sendMessage() {
@@ -505,9 +545,8 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   async function handleDeleteChat() {
     setShowActionSheet(false)
     if (!window.confirm('Delete this chat? This cannot be undone.')) return
-    const { error } = await supabase.from('conversations').delete().eq('id', conversation.id)
-    if (error) {
-      console.error('Error deleting conversation:', error.message)
+    const result = await deleteConversationVerified(conversation.id)
+    if (!result.ok) {
       alert('Could not delete this chat. Please try again.')
       return
     }
@@ -531,8 +570,8 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
       alert('Could not block this user. Please try again.')
       return
     }
-    const { error: delErr } = await supabase.from('conversations').delete().eq('id', conversation.id)
-    if (delErr) console.error('Error deleting conversation after block:', delErr.message)
+    const result = await deleteConversationVerified(conversation.id)
+    if (!result.ok) console.error('Blocked user but could not delete the conversation.')
     onConversationDeleted?.()
     onBack()
   }
@@ -553,7 +592,6 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
           <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-strong)' }}>{conversation.otherName}</div>
         </div>
 
-        {/* 3-dot icon opens the action sheet directly — no intermediate menu */}
         <div onClick={() => setShowActionSheet(true)} style={{ cursor: 'pointer', color: 'var(--text-strong)', padding: '4px' }}>
           <Icon name="ellipsis-vertical" size={20} />
         </div>
@@ -591,8 +629,6 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         </div>
       )}
 
-      {/* Message area — faint purple tint + a very light "PolyNet" watermark
-          centered behind the messages, subtle enough not to compete with content */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: 'rgba(124,58,237,0.035)' }}>
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',

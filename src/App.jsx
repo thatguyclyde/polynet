@@ -218,17 +218,22 @@ function App() {
     }
 
     async function checkUnreadNews() {
-      const [{ data: latest }, { data: readState }] = await Promise.all([
-        supabase.from('news_articles').select('created_at').order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('news_reads').select('last_read_at').eq('user_id', session.user.id).maybeSingle(),
-      ])
-      if (!latest) {
-        setHasUnreadNews(false)
-        return
-      }
-      const lastRead = readState?.last_read_at
-      setHasUnreadNews(!lastRead || new Date(latest.created_at) > new Date(lastRead))
-    }
+  const [{ data: latestOther }, { data: readState }] = await Promise.all([
+    supabase.from('news_articles')
+      .select('created_at')
+      .neq('author_id', session.user.id) // ignore your own posts — those aren't "unread" for you
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from('news_reads').select('last_read_at').eq('user_id', session.user.id).maybeSingle(),
+  ])
+  if (!latestOther) {
+    setHasUnreadNews(false)
+    return
+  }
+  const lastRead = readState?.last_read_at
+  setHasUnreadNews(!lastRead || new Date(latestOther.created_at) > new Date(lastRead))
+}
 
     checkUnreadChats()
     checkUnreadNews()
