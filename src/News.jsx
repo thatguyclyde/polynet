@@ -676,11 +676,12 @@ function News({ session }) {
           const isViewingThis = viewingArticle?.id === article.id
           const posterName = article.profiles?.full_name || 'PolyNet Admin'
 
-          // Purple edge = unread indicator: only for posts newer than the
-          // read-state captured at the start of THIS visit. Once you leave
-          // News, the read-state has already moved forward, so on your next
-          // visit these same posts no longer qualify.
-          const isNew = unreadThreshold === null || new Date(article.created_at) > new Date(unreadThreshold)
+          // Purple edge = unread indicator: only for OTHER people's posts
+          // newer than the read-state captured at the start of THIS visit,
+          // and only once we actually have a real (non-null) prior read
+          // timestamp — a brand-new user with no read-state yet should see
+          // nothing as "new" rather than everything.
+          const isNew = !isOwnArticle && unreadThreshold !== null && new Date(article.created_at) > new Date(unreadThreshold)
 
           return (
             <div

@@ -282,6 +282,12 @@ function Feed({ session, onStartChat }) {
   const [commentCounts, setCommentCounts] = useState({})
   const [likePulse, setLikePulse] = useState({})
 
+  // Tracks which post images have actually finished downloading, so we can
+  // fade each one in only once it's ready — the reserved box (fixed height,
+  // set on the container below) stays put the whole time regardless, which
+  // is what stops the feed from collapsing/reflowing as images trickle in.
+  const [loadedImageIds, setLoadedImageIds] = useState(new Set())
+
   const [burstId, setBurstId] = useState(null)
   const [openComments, setOpenComments] = useState(null)
   const [commentsByPost, setCommentsByPost] = useState({})
@@ -740,6 +746,7 @@ function Feed({ session, onStartChat }) {
           const isOwnPost = post.author_id === session.user.id
           const isViewingThis = viewingPost?.id === post.id
           const hasImage = !!post.image_url
+          const isImageLoaded = loadedImageIds.has(post.id)
 
           return (
             <motion.div key={post.id} layout="position" style={{ borderBottom: `8px solid ${postDivider}` }}>
@@ -848,16 +855,25 @@ function Feed({ session, onStartChat }) {
               )}
 
               {post.image_url && (
-                <div style={{ position: 'relative' }}>
+                <div style={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '340px', // fixed — reserved regardless of load state, this is what stops the collapse/reflow
+                  background: 'var(--app-border-soft)', // placeholder tone while the image is still downloading
+                  overflow: 'hidden',
+                }}>
                   <motion.img
                     layoutId={`post-image-${post.id}`}
                     onClick={() => handleImageTap(post)}
                     src={post.image_url}
                     alt="post"
+                    loading="lazy"
+                    onLoad={() => setLoadedImageIds(prev => new Set(prev).add(post.id))}
                     style={{
-                      width: '100%', maxHeight: '420px', objectFit: 'cover', display: 'block',
+                      width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                       cursor: 'pointer',
-                      opacity: isViewingThis ? 0 : 1,
+                      opacity: isViewingThis ? 0 : (isImageLoaded ? 1 : 0),
+                      transition: 'opacity 0.25s ease',
                     }}
                   />
                   {burstId === post.id && (
