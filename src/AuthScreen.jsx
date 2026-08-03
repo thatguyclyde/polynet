@@ -4,12 +4,14 @@ import { supabase } from './supabase'
 
 function GradientLogo() {
   return (
-    <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+    <div style={{ textAlign: 'center', marginBottom: '32px' }}>
       <h1 style={{
-        margin: '0 0 8px',
-        fontSize: '30px',
+        margin: 0,
+        padding: '4px 0 10px', // extra bottom room so the "y" descender isn't clipped
+        fontSize: '32px',
         fontWeight: 900,
         letterSpacing: '-0.6px',
+        lineHeight: 1.3, // tight line-height was the actual cause of the clipping
         background: 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)',
         WebkitBackgroundClip: 'text',
         backgroundClip: 'text',
@@ -19,22 +21,6 @@ function GradientLogo() {
       }}>
         PolyNet
       </h1>
-      <div style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '4px 13px',
-        borderRadius: '999px',
-        background: 'var(--app-accent-soft)',
-      }}>
-        <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--app-accent)' }} />
-        <span style={{
-          fontSize: '10.5px', fontWeight: 800, letterSpacing: '2px',
-          color: 'var(--app-accent)', textTransform: 'uppercase',
-        }}>
-          Link Up
-        </span>
-      </div>
     </div>
   )
 }

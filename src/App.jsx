@@ -198,54 +198,56 @@ function App() {
     }
   }
 
-  // Single resolution path for the initial session — driven entirely by
-  // onAuthStateChange (which always fires once immediately with whatever
-  // session already exists, on subscribe). No separate manual getSession()
-  // call here, so there's no race between two competing resolutions.
-  useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-      if (newSession) {
-        checkUserProfile(newSession)
-      } else {
-        setOnboarded(false)
-        setChecking(false)
-      }
-    })
-
-    return () => listener.subscription.unsubscribe()
-  }, [])
-
-  async function handleRetry() {
-    setRetrying(true)
-    setNetworkError(false)
-    const hadSessionBefore = !!session
-
-    try {
-      const { data: { session: freshSession }, error } = await supabase.auth.getSession()
-      if (error) throw error
-
-      if (!freshSession && hadSessionBefore) {
-        // We had a session before this error — a null result now almost
-        // certainly means we're still offline, not a genuine sign-out.
-        console.warn('Retry: no session returned but one existed before — treating as still offline.')
-        setNetworkError(true)
-        setRetrying(false)
-        return
-      }
-
-      setSession(freshSession)
-      await checkUserProfile(freshSession)
-    } catch (err) {
-      console.error('Retry failed:', err)
-      setNetworkError(true)
+ useEffect(() => {
+  const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    setSession(newSession)
+    if (newSession) {
+      // A session just appeared (fresh login, or the initial mount fire).
+      // Re-gate rendering behind the loading screen until we actually know
+      // the real onboarding status — otherwise a stale `onboarded` value
+      // left over from a previous session can flash the wrong screen.
+      setChecking(true)
+      checkUserProfile(newSession)
+    } else {
+      // Reset to "unknown" rather than false — false previously caused
+      // Onboarding to flash on the NEXT login, because `session &&
+      // onboarded === false` matched before checkUserProfile had a chance
+      // to run and correct it.
+      setOnboarded(null)
+      setChecking(false)
     }
-    setRetrying(false)
-  }
+  })
 
-  // Called by AuthScreen right after a successful signUp() — persists the
-  // "waiting on email confirmation" flag so it survives the person
-  // switching to their email app and back to this tab.
+  return () => listener.subscription.unsubscribe()
+}, [])
+
+async function handleRetry() {
+  setRetrying(true)
+  setNetworkError(false)
+  setChecking(true) // show the loading dots for the whole retry, not the error screen's own spinner
+  const hadSessionBefore = !!session
+
+  try {
+    const { data: { session: freshSession }, error } = await supabase.auth.getSession()
+    if (error) throw error
+
+    if (!freshSession && hadSessionBefore) {
+      console.warn('Retry: no session returned but one existed before — treating as still offline.')
+      setNetworkError(true)
+      setChecking(false)
+      setRetrying(false)
+      return
+    }
+
+    setSession(freshSession)
+    await checkUserProfile(freshSession) // sets checking back to false once resolved
+  } catch (err) {
+    console.error('Retry failed:', err)
+    setNetworkError(true)
+    setChecking(false)
+  }
+  setRetrying(false)
+}
   function handleAwaitingConfirmation() {
     try {
       sessionStorage.setItem(AWAITING_CONFIRMATION_KEY, '1')
