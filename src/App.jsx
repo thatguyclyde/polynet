@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Newspaper, Store, MessageCircle, UserCircle, WifiOff } from 'lucide-react'
 import { supabase } from './supabase'
 import SplashScreen from './SplashScreen'
-import SignUp from './SignUp'
+import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
 import Feed from './Feed'
 import News from './News'
+
 import Polymart from './Polymart'
 import Profile from './Profile'
 import Chats from './Chats'
@@ -32,6 +33,39 @@ function ComingSoonDots() {
           }} />
         ))}
       </div>
+      <style>{`
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.2; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+// Shown while re-checking session after the person returns to the tab
+// following an email-confirmation tap — distinct from the generic
+// ComingSoonDots so it's clear something specific ("logging you in") is
+// happening, not just a normal app boot.
+function LoggingInScreen() {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: '16px',
+      background: 'var(--page-bg)',
+    }}>
+      <div style={{ display: 'flex', gap: '10px' }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{
+            width: '10px', height: '10px', borderRadius: '50%',
+            background: '#7C3AED',
+            animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+          }} />
+        ))}
+      </div>
+      <p style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-muted)', margin: 0 }}>
+        Logging in…
+      </p>
       <style>{`
         @keyframes dotPulse {
           0%, 100% { opacity: 0.2; transform: scale(0.8); }
@@ -98,6 +132,8 @@ function NetworkErrorScreen({ onRetry, retrying }) {
   )
 }
 
+const AWAITING_CONFIRMATION_KEY = 'polynet_awaiting_confirmation'
+
 function App() {
   const [splash, setSplash] = useState(true)
   const [session, setSession] = useState(null)
@@ -107,11 +143,6 @@ function App() {
   const [networkError, setNetworkError] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [page, setPage] = useState('feed')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const [authView, setAuthView] = useState('login')
   const [showProfile, setShowProfile] = useState(false)
   const [myAvatar, setMyAvatar] = useState(null)
 
@@ -121,6 +152,20 @@ function App() {
 
   const [hasUnreadChats, setHasUnreadChats] = useState(false)
   const [hasUnreadNews, setHasUnreadNews] = useState(false)
+
+  // True if a signup just happened and we're waiting on the person to tap
+  // the confirmation link in their email. Persisted to sessionStorage so it
+  // survives them switching away to their email app and back to this tab.
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(() => {
+    try {
+      return sessionStorage.getItem(AWAITING_CONFIRMATION_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  // True only while actively re-checking for a session after the tab
+  // becomes visible again post-confirmation — drives the "Logging in…" screen.
+  const [confirmingOnReturn, setConfirmingOnReturn] = useState(false)
 
   const checkUserProfile = async (userSession) => {
     if (!userSession) {
@@ -153,24 +198,15 @@ function App() {
     }
   }
 
+  // Single resolution path for the initial session — driven entirely by
+  // onAuthStateChange (which always fires once immediately with whatever
+  // session already exists, on subscribe). No separate manual getSession()
+  // call here, so there's no race between two competing resolutions.
   useEffect(() => {
-    async function init() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        setSession(session)
-        await checkUserProfile(session)
-      } catch (err) {
-        console.error('Error getting session:', err)
-        setNetworkError(true)
-        setChecking(false)
-      }
-    }
-    init()
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      if (session) {
-        checkUserProfile(session)
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+      if (newSession) {
+        checkUserProfile(newSession)
       } else {
         setOnboarded(false)
         setChecking(false)
@@ -183,8 +219,21 @@ function App() {
   async function handleRetry() {
     setRetrying(true)
     setNetworkError(false)
+    const hadSessionBefore = !!session
+
     try {
-      const { data: { session: freshSession } } = await supabase.auth.getSession()
+      const { data: { session: freshSession }, error } = await supabase.auth.getSession()
+      if (error) throw error
+
+      if (!freshSession && hadSessionBefore) {
+        // We had a session before this error — a null result now almost
+        // certainly means we're still offline, not a genuine sign-out.
+        console.warn('Retry: no session returned but one existed before — treating as still offline.')
+        setNetworkError(true)
+        setRetrying(false)
+        return
+      }
+
       setSession(freshSession)
       await checkUserProfile(freshSession)
     } catch (err) {
@@ -193,6 +242,64 @@ function App() {
     }
     setRetrying(false)
   }
+
+  // Called by AuthScreen right after a successful signUp() — persists the
+  // "waiting on email confirmation" flag so it survives the person
+  // switching to their email app and back to this tab.
+  function handleAwaitingConfirmation() {
+    try {
+      sessionStorage.setItem(AWAITING_CONFIRMATION_KEY, '1')
+    } catch {}
+    setAwaitingConfirmation(true)
+  }
+
+  // Polls briefly for a session once the tab becomes visible again while
+  // we're expecting an email confirmation. If confirmation already fully
+  // processed, the very first check usually finds it — reading as an
+  // effectively silent, near-instant proceed. If it's still processing,
+  // "Logging in…" stays up while this keeps retrying, up to ~12s, before
+  // quietly giving up and leaving the person on the auth screen.
+  async function recheckSessionOnReturn() {
+    setConfirmingOnReturn(true)
+    const maxAttempts = 8
+    const intervalMs = 1500
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const { data: { session: freshSession } } = await supabase.auth.getSession()
+        if (freshSession) {
+          setSession(freshSession)
+          await checkUserProfile(freshSession)
+          try {
+            sessionStorage.removeItem(AWAITING_CONFIRMATION_KEY)
+          } catch {}
+          setAwaitingConfirmation(false)
+          setConfirmingOnReturn(false)
+          return
+        }
+      } catch (err) {
+        console.error('Error rechecking session on return:', err)
+      }
+      if (attempt < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, intervalMs))
+      }
+    }
+
+    // Gave up — confirmation still hasn't landed. Drop back to the auth
+    // screen quietly; the flag stays set so this runs again next time they
+    // return to the tab.
+    setConfirmingOnReturn(false)
+  }
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible' && awaitingConfirmation) {
+        recheckSessionOnReturn()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [awaitingConfirmation])
 
   useEffect(() => {
     if (!session) return
@@ -218,22 +325,33 @@ function App() {
     }
 
     async function checkUnreadNews() {
-  const [{ data: latestOther }, { data: readState }] = await Promise.all([
-    supabase.from('news_articles')
-      .select('created_at')
-      .neq('author_id', session.user.id) // ignore your own posts — those aren't "unread" for you
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from('news_reads').select('last_read_at').eq('user_id', session.user.id).maybeSingle(),
-  ])
-  if (!latestOther) {
-    setHasUnreadNews(false)
-    return
-  }
-  const lastRead = readState?.last_read_at
-  setHasUnreadNews(!lastRead || new Date(latestOther.created_at) > new Date(lastRead))
-}
+      const [latestRes, readRes] = await Promise.all([
+        supabase.from('news_articles')
+          .select('created_at')
+          .neq('author_id', session.user.id) // ignore your own posts — those aren't "unread" for you
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from('news_reads').select('last_read_at').eq('user_id', session.user.id).maybeSingle(),
+      ])
+
+      if (latestRes.error) {
+        console.error('Error checking unread news (latest article):', latestRes.error.message)
+        return
+      }
+      if (readRes.error) {
+        console.error('Error checking unread news (read state):', readRes.error.message)
+        return
+      }
+
+      const latestOther = latestRes.data
+      if (!latestOther) {
+        setHasUnreadNews(false)
+        return
+      }
+      const lastRead = readRes.data?.last_read_at
+      setHasUnreadNews(!lastRead || new Date(latestOther.created_at) > new Date(lastRead))
+    }
 
     checkUnreadChats()
     checkUnreadNews()
@@ -243,28 +361,6 @@ function App() {
     }, 10000)
     return () => clearInterval(interval)
   }, [session, page])
-
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setMessage('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setMessage(error.message)
-    setLoading(false)
-  }
-
-  const handleSignUp = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setMessage('')
-    const { error } = await supabase.auth.signUp({ email, password })
-    if (error) {
-      setMessage(error.message)
-    } else {
-      setMessage('Check your email to confirm your account!')
-    }
-    setLoading(false)
-  }
 
   function handleTabClick(targetId) {
     if (navigator.vibrate) navigator.vibrate(8)
@@ -289,14 +385,15 @@ function App() {
 
   if (splash) return <SplashScreen onDone={() => setSplash(false)} />
   if (checking) return <ComingSoonDots />
+  if (confirmingOnReturn) return <LoggingInScreen />
   if (networkError) return <NetworkErrorScreen onRetry={handleRetry} retrying={retrying} />
 
   if (session && onboarded === false) {
     return <Onboarding session={session} onComplete={() => setOnboarded(true)} />
   }
 
-  if (!session && authView === 'signup') {
-    return <SignUp onSwitchToLogin={() => setAuthView('login')} />
+  if (!session) {
+    return <AuthScreen onSignUpSuccess={handleAwaitingConfirmation} />
   }
 
   if (session && onboarded === true) {
@@ -467,87 +564,7 @@ function App() {
     )
   }
 
-  // --- Auth View Layout ---
-  return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'var(--page-bg)',
-      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-      padding: '24px',
-    }}>
-      <div style={{
-        background: 'var(--card-bg)',
-        padding: '40px 32px',
-        borderRadius: '24px',
-        width: '100%',
-        maxWidth: '360px',
-        border: '1.5px solid var(--app-border)',
-        boxShadow: '0 8px 40px rgba(124,58,237,0.08)',
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h1 style={{
-            color: 'var(--text-strong)', margin: '0 0 4px', fontSize: '28px',
-            fontWeight: 900, letterSpacing: '-0.5px',
-          }}>PolyNet</h1>
-          <p style={{
-            color: 'var(--app-accent)', fontSize: '11px', fontWeight: 700,
-            letterSpacing: '3px', margin: 0, fontStyle: 'italic', fontFamily: 'Georgia, serif',
-          }}>Link Up</p>
-        </div>
-
-        <form onSubmit={handleLogin}>
-          <input
-            type="email"
-            placeholder="Student email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={{
-              width: '100%', padding: '14px', marginBottom: '12px',
-              borderRadius: '14px', border: '1.5px solid var(--app-border)',
-              background: 'var(--input-bg)', color: 'var(--text-strong)', fontSize: '15px',
-              boxSizing: 'border-box', outline: 'none',
-            }}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{
-              width: '100%', padding: '14px', marginBottom: '20px',
-              borderRadius: '14px', border: '1.5px solid var(--app-border)',
-              background: 'var(--input-bg)', color: 'var(--text-strong)', fontSize: '15px',
-              boxSizing: 'border-box', outline: 'none',
-            }}
-          />
-          <motion.button whileTap={{ scale: 0.96 }} type="submit" disabled={loading} style={{
-            width: '100%', padding: '15px', borderRadius: '14px',
-            border: 'none', background: 'var(--app-accent)', color: '#fff',
-            fontWeight: 700, fontSize: '16px', marginBottom: '12px',
-            cursor: 'pointer', boxShadow: '0 4px 20px rgba(124,58,237,0.35)',
-          }}>
-            {loading ? 'Signing in...' : 'Sign In'}
-          </motion.button>
-          <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={() => setAuthView('signup')} disabled={loading} style={{
-            width: '100%', padding: '15px', borderRadius: '14px',
-            border: '1.5px solid var(--app-accent)', background: 'transparent',
-            color: 'var(--app-accent)', fontWeight: 700, fontSize: '16px', cursor: 'pointer',
-          }}>
-            Create Account
-          </motion.button>
-        </form>
-
-        {message && (
-          <p style={{ color: 'var(--app-accent)', textAlign: 'center', marginTop: '16px', fontSize: '13px' }}>
-            {message}
-          </p>
-        )}
-      </div>
-    </div>
-  )
+  return null
 }
 
 export default App
