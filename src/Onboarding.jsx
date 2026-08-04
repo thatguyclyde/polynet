@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
+import Icon from './Icon'
 
 const DEPARTMENTS = [
   'Applied Arts (Clothing Technology, Fashion & Textiles)',
@@ -31,6 +32,10 @@ const SUGGESTED_SKILLS = [
   'Hair Styling', 'Makeup Artistry', 'Fashion Design',
   'Research', 'Report Writing', 'Tutoring',
 ]
+
+// TODO: replace with your real PolyNet contact/support email address.
+const SUPPORT_EMAIL = 'support@polynet.app'
+const VERIFIED_BLUE = '#1D9BF0'
 
 const s = {
   page: {
@@ -101,6 +106,217 @@ const s = {
     borderRadius: '12px', color: 'var(--app-accent)', fontSize: '13px', cursor: 'pointer',
     marginTop: '10px', marginBottom: '4px',
   },
+  roleCard: {
+    display: 'flex', alignItems: 'center', gap: '14px', padding: '20px',
+    borderRadius: '18px', border: '1.5px solid var(--app-border-soft)',
+    cursor: 'pointer', background: 'var(--input-bg)',
+  },
+  roleIcon: {
+    width: '48px', height: '48px', borderRadius: '14px', background: 'var(--app-accent-soft)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0,
+  },
+}
+
+function VerifiedBadge({ size = 54 }) {
+  return (
+    <span style={{ position: 'relative', width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Icon name="badgeCheck" size={size} color={VERIFIED_BLUE} fill={VERIFIED_BLUE} style={{ position: 'absolute', top: 0, left: 0 }} />
+      <Icon name="check" size={size * 0.46} color="#fff" strokeWidth={3.5} style={{ position: 'relative' }} />
+    </span>
+  )
+}
+
+function StepRoleSelect({ onSelectStudent, onSelectAdmin }) {
+  return (
+    <div style={s.page}>
+      <h2 style={s.title}>How will you use PolyNet?</h2>
+      <p style={s.sub}>Choose the option that fits you</p>
+
+      <div onClick={onSelectStudent} style={{ ...s.roleCard, marginBottom: '14px' }}>
+        <div style={s.roleIcon}>🎓</div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-strong)' }}>I'm a Student</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Build your profile, find skills, join the marketplace</div>
+        </div>
+      </div>
+
+      <div onClick={onSelectAdmin} style={s.roleCard}>
+        <div style={s.roleIcon}>🏛️</div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-strong)' }}>I'm Staff / Admin</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Post official news and announcements</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Checks the current user's email against the `admins` table. Auto-advances
+// on success after a short beat so the verified badge is actually seen;
+// on failure, waits for the person to choose Back or Contact PolyNet.
+function StepAdminVerify({ session, onVerified, onBack }) {
+  const [status, setStatus] = useState('checking') // 'checking' | 'verified' | 'denied'
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function verify() {
+      const { data, error } = await supabase
+        .from('admins')
+        .select('email')
+        .eq('email', session.user.email)
+        .maybeSingle()
+
+      if (cancelled) return
+
+      if (error) {
+        console.error('Error verifying admin status:', error.message)
+        setStatus('denied')
+        return
+      }
+
+      if (data) {
+        setStatus('verified')
+        setTimeout(() => { if (!cancelled) onVerified() }, 1200)
+      } else {
+        setStatus('denied')
+      }
+    }
+
+    verify()
+    return () => { cancelled = true }
+  }, [])
+
+  if (status === 'checking') {
+    return (
+      <div style={s.page}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '18px' }}>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '14px' }}>Verifying...</p>
+        </div>
+        <style>{`@keyframes dotPulse { 0%,100% { opacity: 0.2; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); } }`}</style>
+      </div>
+    )
+  }
+
+  if (status === 'verified') {
+    return (
+      <div style={s.page}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+          <VerifiedBadge size={56} />
+          <p style={{ color: 'var(--text-strong)', fontWeight: 800, fontSize: '17px', margin: 0 }}>Verified!</p>
+        </div>
+      </div>
+    )
+  }
+
+  // denied
+  return (
+    <div style={s.page}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '10px' }}>
+        <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+          <Icon name="shield" size={28} color="var(--app-accent)" />
+        </div>
+        <h2 style={{ color: 'var(--text-strong)', fontSize: '19px', fontWeight: 800, margin: 0 }}>Not an Admin</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '13.5px', maxWidth: '260px', lineHeight: 1.5 }}>
+          We couldn't find {session.user.email} on our admin list. If this is a mistake, reach out and we'll sort it out.
+        </p>
+      </div>
+      <div style={s.navRow}>
+        <button
+          onClick={onBack}
+          style={{ ...s.nextBtn, marginTop: 0, flex: 1, background: 'var(--input-bg)', color: 'var(--app-accent)', border: '1.5px solid var(--app-accent)', boxShadow: 'none' }}
+        >
+          ← Back
+        </button>
+        <a
+          href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Admin access request — PolyNet')}&body=${encodeURIComponent(`Hi, I'd like to request admin access for PolyNet.\n\nMy account email: ${session.user.email}`)}`}
+          style={{ ...s.nextBtn, marginTop: 0, flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          Contact PolyNet
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function StepAdminDetails({ session, onFinish }) {
+  const [fullName, setFullName] = useState('')
+  const [title, setTitle] = useState('')
+  const [department, setDepartment] = useState('')
+  const [deptSearch, setDeptSearch] = useState('')
+  const [showDept, setShowDept] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const filtered = DEPARTMENTS.filter(d => d.toLowerCase().includes(deptSearch.toLowerCase()))
+
+  async function handleFinish() {
+    if (!fullName.trim()) return setError('Please enter your full name')
+    if (!title.trim()) return setError('Please enter your title')
+    if (!department) return setError('Please select the department you represent')
+    setLoading(true)
+    setError('')
+    const { error: err } = await supabase
+      .from('profiles')
+      .update({
+        full_name: fullName,
+        department,
+        admin_title: title,
+        is_admin: true,
+      })
+      .eq('id', session.user.id)
+    if (err) { setError(err.message); setLoading(false) }
+    else onFinish()
+  }
+
+  return (
+    <div style={s.page}>
+      <h2 style={s.title}>Admin details</h2>
+      <p style={s.sub}>Let students know who you are</p>
+
+      <label style={s.label}>Full Name</label>
+      <input value={fullName} onChange={e => setFullName(e.target.value)}
+        placeholder="e.g. Mrs. T. Moyo" style={s.input} />
+
+      <label style={s.label}>Title</label>
+      <input value={title} onChange={e => setTitle(e.target.value)}
+        placeholder="e.g. HOD Electrical Engineering, Principal, SRC President" style={s.input} />
+
+      <label style={s.label}>Department</label>
+      <div style={{ position: 'relative' }}>
+        <input
+          value={department || deptSearch}
+          onChange={e => { setDeptSearch(e.target.value); setDepartment(''); setShowDept(true) }}
+          onFocus={() => { setShowDept(true); if (department) setDeptSearch('') }}
+          onBlur={() => setTimeout(() => setShowDept(false), 150)}
+          placeholder="Search department you represent..."
+          style={s.input}
+        />
+        {showDept && filtered.length > 0 && (
+          <div style={s.dropdown}>
+            {filtered.map(d => (
+              <div key={d} style={s.dItem}
+                onMouseDown={() => { setDepartment(d); setDeptSearch(''); setShowDept(false) }}>
+                {d}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <p style={{ color: 'var(--text-muted)', fontSize: '11.5px', marginTop: '6px' }}>Shown on your public profile card</p>
+
+      {error && <p style={s.error}>{error}</p>}
+      <div style={{ flex: 1, minHeight: '24px' }} />
+      <button onClick={handleFinish} disabled={loading} style={s.nextBtn}>
+        {loading ? 'Saving...' : 'Finish →'}
+      </button>
+    </div>
+  )
 }
 
 function StepProfile({ session, onNext }) {
@@ -260,13 +476,40 @@ function StepSkills({ session, onNext, onBack }) {
 }
 
 function Onboarding({ session, onComplete }) {
-  const [step, setStep] = useState(1)
-  return (
-    <>
-      {step === 1 && <StepProfile session={session} onNext={() => setStep(2)} />}
-      {step === 2 && <StepSkills session={session} onNext={() => onComplete()} onBack={() => setStep(1)} />}
-    </>
-  )
+  const [flow, setFlow] = useState('roleSelect') // roleSelect | studentStep1 | studentStep2 | adminVerify | adminDetails
+
+  if (flow === 'roleSelect') {
+    return (
+      <StepRoleSelect
+        onSelectStudent={() => setFlow('studentStep1')}
+        onSelectAdmin={() => setFlow('adminVerify')}
+      />
+    )
+  }
+
+  if (flow === 'studentStep1') {
+    return <StepProfile session={session} onNext={() => setFlow('studentStep2')} />
+  }
+
+  if (flow === 'studentStep2') {
+    return <StepSkills session={session} onNext={() => onComplete()} onBack={() => setFlow('studentStep1')} />
+  }
+
+  if (flow === 'adminVerify') {
+    return (
+      <StepAdminVerify
+        session={session}
+        onVerified={() => setFlow('adminDetails')}
+        onBack={() => setFlow('roleSelect')}
+      />
+    )
+  }
+
+  if (flow === 'adminDetails') {
+    return <StepAdminDetails session={session} onFinish={() => onComplete()} />
+  }
+
+  return null
 }
 
 export default Onboarding

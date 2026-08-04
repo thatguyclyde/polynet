@@ -468,19 +468,44 @@ function Feed({ session, onStartChat }) {
     setTimeout(() => setBurstId(current => (current === postId ? null : current)), 700)
   }
 
-  function handleImageTap(post) {
-    if (tapTimer.current) {
-      clearTimeout(tapTimer.current)
-      tapTimer.current = null
-      handleDoubleTap(post.id)
-    } else {
-      tapTimer.current = setTimeout(() => {
-        tapTimer.current = null
-        setViewingPost(post)
-      }, 240)
-    }
+  async function handleSaveImage(post) {
+  setOpenMenuId(null)
+  if (!post.image_url) {
+    alert("This post doesn't have an image to save.")
+    return
   }
 
+  // Mobile browsers (iOS Safari especially) don't reliably support forcing
+  // a download via blob + <a download> — the link either does nothing or
+  // just navigates to the image instead of saving it. The one thing that
+  // works consistently across mobile browsers is opening the image in its
+  // own tab and letting the person long-press it to save natively — so
+  // mobile skips straight to that instead of attempting the desktop path.
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  if (isMobile) {
+    window.open(post.image_url, '_blank')
+    return
+  }
+
+  setSavingImageId(post.id)
+  try {
+    const response = await fetch(post.image_url, { mode: 'cors' })
+    if (!response.ok) throw new Error('Fetch failed')
+    const blob = await response.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = `polynet-post-${post.id}.jpg`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(blobUrl)
+  } catch (err) {
+    console.error('Error downloading image, falling back to opening it:', err)
+    window.open(post.image_url, '_blank')
+  }
+  setSavingImageId(null)
+}
   function closeImageViewer() {
     setViewingPost(null)
     setOpenMenuId(null)

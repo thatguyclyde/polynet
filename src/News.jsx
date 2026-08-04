@@ -119,12 +119,11 @@ function DislikeButton({ isDisliked, count, pulseKey, onClick }) {
   )
 }
 
-function News({ session }) {
+function News({ session, isAdmin }) {
   const { isDark } = useTheme()
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
-  const [isAdmin, setIsAdmin] = useState(true)
 
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerStep, setComposerStep] = useState('choose')
