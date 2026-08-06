@@ -186,10 +186,10 @@ function App() {
       const isAdmin = !!data?.is_admin
       setIsAdminUser(isAdmin)
       const complete = data && (
-        isAdmin
-          ? !!(data.full_name && data.department && data.admin_title)
-          : !!(data.full_name && data.department && data.year_of_study)
-      )
+  isAdminUser
+    ? !!(data.department && data.admin_title)   // full_name removed from the admin requirement
+    : !!(data.full_name && data.department && data.year_of_study)
+)
       setOnboarded(!!complete)
       if (data?.avatar_url) setMyAvatar(data.avatar_url)
     } catch (err) {

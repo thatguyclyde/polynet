@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 
 const DEPARTMENTS = [
+  'Administration',
   'Applied Arts (Clothing Technology, Fashion & Textiles)',
   'Beauty Therapy & Cosmetology',
   'Business Studies',
@@ -84,11 +85,13 @@ const s = {
     width: '100%', padding: '16px', borderRadius: '16px', border: 'none',
     background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '16px',
     cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: 'auto',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
   },
-  backBtn: {
+  iconBackBtn: {
     width: '52px', height: '52px', borderRadius: '14px',
-    border: '1.5px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--app-accent)',
-    fontWeight: 700, fontSize: '20px', cursor: 'pointer', flexShrink: 0,
+    border: '1.5px solid var(--app-border-soft)', background: 'var(--input-bg)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', flexShrink: 0,
   },
   navRow: { display: 'flex', gap: '12px', alignItems: 'center', marginTop: 'auto' },
   error: { color: 'var(--danger)', fontSize: '13px', marginTop: '12px' },
@@ -215,7 +218,10 @@ function StepAdminVerify({ session, onVerified, onBack }) {
     )
   }
 
-  // denied
+  // denied — compact icon-only Back button, and a proper Contact PolyNet
+  // button with a phone icon, instead of two stretched text buttons.
+  const contactHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Admin access request — PolyNet')}&body=${encodeURIComponent(`Hi, I'd like to request admin access for PolyNet.\n\nMy account email: ${session.user.email}`)}`
+
   return (
     <div style={s.page}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '10px' }}>
@@ -228,16 +234,19 @@ function StepAdminVerify({ session, onVerified, onBack }) {
         </p>
       </div>
       <div style={s.navRow}>
-        <button
-          onClick={onBack}
-          style={{ ...s.nextBtn, marginTop: 0, flex: 1, background: 'var(--input-bg)', color: 'var(--app-accent)', border: '1.5px solid var(--app-accent)', boxShadow: 'none' }}
-        >
-          ← Back
+        <button onClick={onBack} aria-label="Back" style={s.iconBackBtn}>
+          <Icon name="arrowLeft" size={20} color="var(--text-strong)" />
         </button>
         <a
-          href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Admin access request — PolyNet')}&body=${encodeURIComponent(`Hi, I'd like to request admin access for PolyNet.\n\nMy account email: ${session.user.email}`)}`}
-          style={{ ...s.nextBtn, marginTop: 0, flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          href={contactHref}
+          style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            padding: '15px', borderRadius: '14px', border: 'none',
+            background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '14.5px',
+            cursor: 'pointer', boxShadow: 'var(--shadow-accent)', textDecoration: 'none',
+          }}
         >
+          <Icon name="phone" size={16} color="#fff" />
           Contact PolyNet
         </a>
       </div>
@@ -246,7 +255,6 @@ function StepAdminVerify({ session, onVerified, onBack }) {
 }
 
 function StepAdminDetails({ session, onFinish }) {
-  const [fullName, setFullName] = useState('')
   const [title, setTitle] = useState('')
   const [department, setDepartment] = useState('')
   const [deptSearch, setDeptSearch] = useState('')
@@ -257,7 +265,6 @@ function StepAdminDetails({ session, onFinish }) {
   const filtered = DEPARTMENTS.filter(d => d.toLowerCase().includes(deptSearch.toLowerCase()))
 
   async function handleFinish() {
-    if (!fullName.trim()) return setError('Please enter your full name')
     if (!title.trim()) return setError('Please enter your title')
     if (!department) return setError('Please select the department you represent')
     setLoading(true)
@@ -265,9 +272,8 @@ function StepAdminDetails({ session, onFinish }) {
     const { error: err } = await supabase
       .from('profiles')
       .update({
-        full_name: fullName,
         department,
-        admin_title: title,
+        admin_title: title.trim(),
         is_admin: true,
       })
       .eq('id', session.user.id)
@@ -280,13 +286,20 @@ function StepAdminDetails({ session, onFinish }) {
       <h2 style={s.title}>Admin details</h2>
       <p style={s.sub}>Let students know who you are</p>
 
-      <label style={s.label}>Full Name</label>
-      <input value={fullName} onChange={e => setFullName(e.target.value)}
-        placeholder="e.g. Mrs. T. Moyo" style={s.input} />
-
       <label style={s.label}>Title</label>
-      <input value={title} onChange={e => setTitle(e.target.value)}
-        placeholder="e.g. HOD Electrical Engineering, Principal, SRC President" style={s.input} />
+      <div style={{ position: 'relative' }}>
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="e.g. HOD Electrical Engineering, Principal, SRC President"
+          style={{ ...s.input, paddingRight: title.trim() ? '48px' : '16px' }}
+        />
+        {title.trim().length > 0 && (
+          <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}>
+            <VerifiedBadge size={20} />
+          </div>
+        )}
+      </div>
 
       <label style={s.label}>Department</label>
       <div style={{ position: 'relative' }}>
@@ -313,8 +326,16 @@ function StepAdminDetails({ session, onFinish }) {
 
       {error && <p style={s.error}>{error}</p>}
       <div style={{ flex: 1, minHeight: '24px' }} />
-      <button onClick={handleFinish} disabled={loading} style={s.nextBtn}>
-        {loading ? 'Saving...' : 'Finish →'}
+      <button
+        onClick={handleFinish}
+        disabled={loading}
+        style={{
+          alignSelf: 'center', padding: '14px 44px', borderRadius: '14px', border: 'none',
+          background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '15px',
+          cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: 'auto',
+        }}
+      >
+        {loading ? 'Saving...' : 'Done'}
       </button>
     </div>
   )
@@ -394,7 +415,12 @@ function StepProfile({ session, onNext }) {
       {error && <p style={s.error}>{error}</p>}
       <div style={{ flex: 1, minHeight: '24px' }} />
       <button onClick={handleNext} disabled={loading} style={s.nextBtn}>
-        {loading ? 'Saving...' : 'Next →'}
+        {loading ? 'Saving...' : (
+          <>
+            Next
+            <Icon name="arrowRight" size={17} color="#fff" />
+          </>
+        )}
       </button>
     </div>
   )
@@ -466,10 +492,17 @@ function StepSkills({ session, onNext, onBack }) {
       </div>
 
       <div style={s.navRow}>
-        <button onClick={onBack} style={s.backBtn}>←</button>
+        <button onClick={onBack} aria-label="Back" style={s.iconBackBtn}>
+          <Icon name="arrowLeft" size={20} color="var(--text-strong)" />
+        </button>
         <button onClick={handleNext} disabled={loading}
           style={{ ...s.nextBtn, marginTop: 0, flex: 1 }}>
-          {loading ? 'Finishing...' : 'Finish →'}
+          {loading ? 'Finishing...' : (
+            <>
+              Finish
+              <Icon name="arrowRight" size={17} color="#fff" />
+            </>
+          )}
         </button>
       </div>
     </div>
