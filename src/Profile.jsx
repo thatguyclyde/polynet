@@ -36,6 +36,8 @@ const SOCIAL_PLATFORMS = [
   { id: 'website', label: 'Website', icon: 'globe' },
 ]
 
+const VERIFIED_BLUE = '#1D9BF0'
+
 function platformInfo(id) {
   return SOCIAL_PLATFORMS.find(p => p.id === id) || SOCIAL_PLATFORMS[SOCIAL_PLATFORMS.length - 1]
 }
@@ -71,6 +73,15 @@ function compressImage(file, maxWidth = 500, quality = 0.75) {
     reader.onerror = () => reject(new Error('File read failed'))
     reader.readAsDataURL(file)
   })
+}
+
+function VerifiedBadge({ size = 14 }) {
+  return (
+    <span style={{ position: 'relative', width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <Icon name="badgeCheck" size={size} color={VERIFIED_BLUE} fill={VERIFIED_BLUE} style={{ position: 'absolute', top: 0, left: 0 }} />
+      <Icon name="check" size={size * 0.46} color="#fff" strokeWidth={3.5} style={{ position: 'relative' }} />
+    </span>
+  )
 }
 
 function InfoPage({ title, onBack, children }) {
@@ -166,6 +177,11 @@ function Profile({ session, onBack }) {
   const [confirmModal, setConfirmModal] = useState(null)
   const [viewingAvatar, setViewingAvatar] = useState(false)
 
+  // Admin-specific fields — profiles shared between students and admins,
+  // so which fields apply depends on isAdmin.
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminTitle, setAdminTitle] = useState('')
+
   useEffect(() => {
     fetchProfile()
   }, [])
@@ -174,7 +190,7 @@ function Profile({ session, onBack }) {
     const [{ data }, { data: skillData }, { data: platformSkills }] = await Promise.all([
       supabase
         .from('profiles')
-        .select('full_name, department, year_of_study, bio, avatar_url, whatsapp_number, social_links')
+        .select('full_name, department, year_of_study, bio, avatar_url, whatsapp_number, social_links, is_admin, admin_title')
         .eq('id', session.user.id)
         .maybeSingle(),
       supabase
@@ -194,6 +210,8 @@ function Profile({ session, onBack }) {
       setAvatarUrl(data.avatar_url || null)
       setWhatsapp(data.whatsapp_number || '')
       setSocialLinks(data.social_links || [])
+      setIsAdmin(!!data.is_admin)
+      setAdminTitle(data.admin_title || '')
     }
 
     setSkills(skillData || [])
@@ -277,17 +295,26 @@ function Profile({ session, onBack }) {
       newAvatarUrl = urlData.publicUrl
     }
 
+    // Admins and students save different secondary fields — year_of_study
+    // for students, admin_title for admins. Neither role touches the
+    // other's field, and is_admin itself isn't editable here.
+    const updatePayload = {
+      full_name: fullName.trim(),
+      department,
+      bio,
+      avatar_url: newAvatarUrl,
+      whatsapp_number: whatsapp.trim() || null,
+      social_links: socialLinks,
+    }
+    if (isAdmin) {
+      updatePayload.admin_title = adminTitle.trim()
+    } else {
+      updatePayload.year_of_study = year
+    }
+
     const { data: updateData, error } = await supabase
       .from('profiles')
-      .update({
-        full_name: fullName.trim(),
-        department,
-        year_of_study: year,
-        bio,
-        avatar_url: newAvatarUrl,
-        whatsapp_number: whatsapp.trim() || null,
-        social_links: socialLinks,
-      })
+      .update(updatePayload)
       .eq('id', session.user.id)
       .select()
 
@@ -308,6 +335,7 @@ function Profile({ session, onBack }) {
 
   function requestSave() {
     if (!fullName.trim()) return setMessage('Full name is required')
+    if (isAdmin && !adminTitle.trim()) return setMessage('Title is required')
     setConfirmModal('save')
   }
 
@@ -355,9 +383,8 @@ function Profile({ session, onBack }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', paddingBottom: editMode ? '110px' : '24px' }}>
 
-      {/* ═══ STICKY HEADER — close button restyled: neutral color, chevron
-          facing right (this panel closes back toward the right, where it
-          slid in from) instead of a purple left-facing arrow. ═══ */}
+      {/* ═══ STICKY HEADER — close button only shows outside edit mode,
+          since Cancel already covers "leave this screen" while editing. ═══ */}
       <div style={{
         padding: '16px 20px 12px',
         background: 'var(--card-bg)',
@@ -388,7 +415,7 @@ function Profile({ session, onBack }) {
             </span>
           )}
 
-          {onBack && (
+          {!editMode && onBack && (
             <button
               onClick={onBack}
               aria-label="Close Profile"
@@ -454,16 +481,37 @@ function Profile({ session, onBack }) {
 
             {!editMode ? (
               <>
-                {/* Minimal read-only display: name, department, bio only —
-                    no year, verified badge, skills, or social icons. */}
-                <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)', marginTop: '10px' }}>
-                  {fullName || 'Your Name'}
-                </div>
-                {department && (
-                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {department}
+                {/* Minimal read-only display: name, then role-specific
+                    context line, then bio. Admins get a verified badge +
+                    their title; students get their department only. */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '10px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>
+                    {fullName || 'Your Name'}
                   </div>
+                  {isAdmin && <VerifiedBadge size={15} />}
+                </div>
+
+                {isAdmin ? (
+                  <>
+                    {adminTitle && (
+                      <div style={{ fontSize: '13px', color: 'var(--app-accent)', fontWeight: 700, marginTop: '4px' }}>
+                        {adminTitle}
+                      </div>
+                    )}
+                    {department && (
+                      <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {department}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  department && (
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {department}
+                    </div>
+                  )
                 )}
+
                 {bio && (
                   <p style={{ margin: '10px 0 0', fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.55 }}>{bio}</p>
                 )}
@@ -494,7 +542,7 @@ function Profile({ session, onBack }) {
         {editMode && (
           <>
             <div style={cardStyle}>
-              <div style={miniLabel}>Department</div>
+              <div style={miniLabel}>Department{isAdmin ? ' you represent' : ''}</div>
               <div style={{ position: 'relative' }}>
                 <input
                   value={department || deptSearch}
@@ -516,16 +564,28 @@ function Profile({ session, onBack }) {
               </div>
             </div>
 
-            <div style={cardStyle}>
-              <div style={miniLabel}>Year of Study</div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {[1, 2, 3, 4, 5].map(y => (
-                  <button key={y} type="button" onClick={() => setYear(y)} style={{ flex: 1, padding: '9px 0', borderRadius: '10px', border: year === y ? 'none' : '1px solid var(--app-border-soft)', background: year === y ? 'var(--app-accent)' : 'var(--page-bg)', color: year === y ? '#fff' : 'var(--text-muted)', fontWeight: 700, cursor: 'pointer', fontSize: '13px' }}>
-                    {y}
-                  </button>
-                ))}
+            {isAdmin ? (
+              <div style={cardStyle}>
+                <div style={miniLabel}>Title</div>
+                <input
+                  value={adminTitle}
+                  onChange={e => setAdminTitle(e.target.value)}
+                  placeholder="e.g. HOD Electrical Engineering, Principal, SRC President"
+                  style={compactInput}
+                />
               </div>
-            </div>
+            ) : (
+              <div style={cardStyle}>
+                <div style={miniLabel}>Year of Study</div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {[1, 2, 3, 4, 5].map(y => (
+                    <button key={y} type="button" onClick={() => setYear(y)} style={{ flex: 1, padding: '9px 0', borderRadius: '10px', border: year === y ? 'none' : '1px solid var(--app-border-soft)', background: year === y ? 'var(--app-accent)' : 'var(--page-bg)', color: year === y ? '#fff' : 'var(--text-muted)', fontWeight: 700, cursor: 'pointer', fontSize: '13px' }}>
+                      {y}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={cardStyle}>
               <div style={miniLabel}>Bio</div>

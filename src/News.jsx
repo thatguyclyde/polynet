@@ -663,6 +663,7 @@ function News({ session, isAdmin }) {
         )}
       </AnimatePresence>
 
+      <div style={{ paddingTop: '92px' }}>
       {loading || unreadThreshold === undefined ? <NewsSkeleton /> : (
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {articles.map(article => {
@@ -859,6 +860,7 @@ function News({ session, isAdmin }) {
         })}
       </div>
       )}
+      </div>
 
       {/* Fullscreen Image Viewer */}
       <AnimatePresence>

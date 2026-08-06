@@ -291,7 +291,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       <div style={{
         padding: '18px 20px 14px',
         background: headerBg,
-        position: 'sticky', top: 0, zIndex: 30,
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
       }}>
         <div style={{ textAlign: 'left' }}>
           <h1 style={{
@@ -517,8 +517,9 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       </AnimatePresence>
 
       {/* Listings area — slightly darker background in light mode so cards
-          stand out clearly from the page behind them. */}
-      <div style={{ background: listingsAreaBg, minHeight: '40vh' }}>
+          stand out clearly from the page behind them. paddingTop accounts
+          for the now-fixed header above it. */}
+      <div style={{ background: listingsAreaBg, minHeight: '40vh', paddingTop: '190px' }}>
         {filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 30px' }}>
             <Icon name="shoppingBag" size={40} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '12px' }} />

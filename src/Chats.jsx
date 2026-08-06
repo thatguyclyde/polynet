@@ -347,7 +347,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
       <div style={{
         padding: '18px 20px 20px',
         background: headerBg,
-        position: 'sticky', top: 0, zIndex: 30,
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
       }}>
         <div style={{ textAlign: 'left' }}>
           <h1 style={{
@@ -369,6 +369,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
         </div>
       </div>
 
+      <div style={{ paddingTop: '80px' }}>
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
@@ -429,6 +430,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
           })}
         </div>
       )}
+      </div>
 
       <AnimatePresence>
         {actionSheetFor && (
@@ -459,6 +461,13 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   const isRecipient = !isSelfChat && session.user.id === conversation.sellerId
   const isInitiator = !isSelfChat && session.user.id === conversation.buyerId
   const isPendingForMe = status === 'pending' && isRecipient
+
+  // The pending-request banner adds extra height under the header, only
+  // when it's actually showing — the scroll area's top padding accounts
+  // for that so messages never start out hidden beneath it.
+  const showPendingBanner = isPendingForMe
+  const showInitiatorNotice = status === 'pending' && isInitiator
+  const topOffset = 64 + (showPendingBanner ? 92 : 0) + (showInitiatorNotice ? 44 : 0)
 
   useEffect(() => {
     fetchMessages(true)
@@ -578,7 +587,12 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-      <div style={{ padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10 }}>
+      {/* HEADER — now fixed, stays put regardless of message-list scroll */}
+      <div style={{
+        padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
+        display: 'flex', alignItems: 'center', gap: '12px',
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 130,
+      }}>
         <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
           <Icon name="arrowLeft" size={20} />
         </div>
@@ -597,8 +611,12 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         </div>
       </div>
 
+      {/* PENDING-REQUEST BANNER — also fixed, sits directly under the header */}
       {isPendingForMe && (
-        <div style={{ padding: '14px 20px', background: 'var(--app-accent-soft)', borderBottom: '1px solid var(--app-border)' }}>
+        <div style={{
+          padding: '14px 20px', background: 'var(--app-accent-soft)', borderBottom: '1px solid var(--app-border)',
+          position: 'fixed', top: '64px', left: 0, right: 0, zIndex: 129,
+        }}>
           <p style={{ margin: '0 0 10px', fontSize: '12.5px', fontWeight: 700, color: 'var(--app-accent)' }}>
             Message request — keep this conversation or delete it?
           </p>
@@ -622,16 +640,22 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
       )}
 
       {status === 'pending' && isInitiator && (
-        <div style={{ padding: '10px 20px', background: 'var(--page-bg)', borderBottom: '1px solid var(--app-border)' }}>
+        <div style={{
+          padding: '10px 20px', background: 'var(--page-bg)', borderBottom: '1px solid var(--app-border)',
+          position: 'fixed', top: '64px', left: 0, right: 0, zIndex: 129,
+        }}>
           <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)', textAlign: 'center' }}>
             Message request sent — they'll see it once they check their chats.
           </p>
         </div>
       )}
 
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: 'rgba(124,58,237,0.035)' }}>
+      <div style={{
+        flex: 1, position: 'relative', overflow: 'hidden', background: 'rgba(124,58,237,0.035)',
+        paddingTop: `${topOffset}px`, paddingBottom: '80px',
+      }}>
         <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'absolute', inset: 0, top: `${topOffset}px`, bottom: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center',
           pointerEvents: 'none', overflow: 'hidden',
         }}>
           <span style={{
@@ -712,7 +736,13 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         </div>
       </div>
 
-      <div style={{ padding: '12px 16px', background: 'var(--card-bg)', borderTop: '1px solid var(--app-border)', display: 'flex', gap: '8px' }}>
+      {/* MESSAGE INPUT BAR — now fixed at the bottom, no longer scrolls
+          away with the message list */}
+      <div style={{
+        padding: '12px 16px', background: 'var(--card-bg)', borderTop: '1px solid var(--app-border)',
+        display: 'flex', gap: '8px',
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 130,
+      }}>
         <input
           value={text}
           onChange={e => setText(e.target.value)}

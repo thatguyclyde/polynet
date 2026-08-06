@@ -151,9 +151,10 @@ function StepRoleSelect({ onSelectStudent, onSelectAdmin }) {
   )
 }
 
-// Checks the current user's email against the `admins` table. Auto-advances
-// on success after a short beat so the verified badge is actually seen;
-// on failure, waits for the person to choose Back or Contact PolyNet.
+// Checks the current user's ID against the `admins` table (which keys off
+// user_id, not email). Auto-advances on success after a short beat so the
+// verified badge is actually seen; on failure, waits for the person to
+// choose Back or Contact PolyNet.
 function StepAdminVerify({ session, onVerified, onBack }) {
   const [status, setStatus] = useState('checking') // 'checking' | 'verified' | 'denied'
 
@@ -163,8 +164,8 @@ function StepAdminVerify({ session, onVerified, onBack }) {
     async function verify() {
       const { data, error } = await supabase
         .from('admins')
-        .select('email')
-        .eq('email', session.user.email)
+        .select('user_id')
+        .eq('user_id', session.user.id)
         .maybeSingle()
 
       if (cancelled) return
