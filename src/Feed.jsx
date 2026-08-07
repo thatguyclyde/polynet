@@ -60,9 +60,6 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
   })
 }
 
-// Character-overlap similarity for misspelling tolerance — counts how many
-// letters of the query can be matched (each used once) against the target
-// word, as a fraction of the query's own length.
 function letterOverlapRatio(query, target) {
   const q = query.toLowerCase()
   const remaining = target.toLowerCase().split('')
@@ -260,7 +257,7 @@ function ShareSheet({ url, onClose }) {
   )
 }
 
-function Feed({ session, onStartChat }) {
+function Feed({ session, onStartChat, scrollY = 0 }) {
   const { isDark } = useTheme()
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -281,12 +278,6 @@ function Feed({ session, onStartChat }) {
   const [likeCounts, setLikeCounts] = useState({})
   const [commentCounts, setCommentCounts] = useState({})
   const [likePulse, setLikePulse] = useState({})
-
-  // Tracks which post images have actually finished downloading, so we can
-  // fade each one in only once it's ready — the reserved box (fixed height,
-  // set on the container below) stays put the whole time regardless, which
-  // is what stops the feed from collapsing/reflowing as images trickle in.
-  const [loadedImageIds, setLoadedImageIds] = useState(new Set())
 
   const [burstId, setBurstId] = useState(null)
   const [openComments, setOpenComments] = useState(null)
@@ -310,6 +301,12 @@ function Feed({ session, onStartChat }) {
   const [skillResults, setSkillResults] = useState([])
   const [skillSearching, setSkillSearching] = useState(false)
   const [skillSearched, setSkillSearched] = useState(false)
+
+  // Tracks which post images have finished downloading, so each image can
+  // fade in instead of popping in and shifting layout.
+  const [loadedImageIds, setLoadedImageIds] = useState(new Set())
+
+  const isCollapsed = scrollY > 30 // must match FEED_COLLAPSE_THRESHOLD in App.jsx
 
   useEffect(() => {
     fetchPosts()
@@ -468,44 +465,19 @@ function Feed({ session, onStartChat }) {
     setTimeout(() => setBurstId(current => (current === postId ? null : current)), 700)
   }
 
-  async function handleSaveImage(post) {
-  setOpenMenuId(null)
-  if (!post.image_url) {
-    alert("This post doesn't have an image to save.")
-    return
+  function handleImageTap(post) {
+    if (tapTimer.current) {
+      clearTimeout(tapTimer.current)
+      tapTimer.current = null
+      handleDoubleTap(post.id)
+    } else {
+      tapTimer.current = setTimeout(() => {
+        tapTimer.current = null
+        setViewingPost(post)
+      }, 240)
+    }
   }
 
-  // Mobile browsers (iOS Safari especially) don't reliably support forcing
-  // a download via blob + <a download> — the link either does nothing or
-  // just navigates to the image instead of saving it. The one thing that
-  // works consistently across mobile browsers is opening the image in its
-  // own tab and letting the person long-press it to save natively — so
-  // mobile skips straight to that instead of attempting the desktop path.
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-  if (isMobile) {
-    window.open(post.image_url, '_blank')
-    return
-  }
-
-  setSavingImageId(post.id)
-  try {
-    const response = await fetch(post.image_url, { mode: 'cors' })
-    if (!response.ok) throw new Error('Fetch failed')
-    const blob = await response.blob()
-    const blobUrl = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = blobUrl
-    link.download = `polynet-post-${post.id}.jpg`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(blobUrl)
-  } catch (err) {
-    console.error('Error downloading image, falling back to opening it:', err)
-    window.open(post.image_url, '_blank')
-  }
-  setSavingImageId(null)
-}
   function closeImageViewer() {
     setViewingPost(null)
     setOpenMenuId(null)
@@ -558,7 +530,6 @@ function Feed({ session, onStartChat }) {
     }
   }
 
-  // Actually downloads the post's image to the user's device.
   async function handleSaveImage(post) {
     setOpenMenuId(null)
     if (!post.image_url) {
@@ -580,8 +551,6 @@ function Feed({ session, onStartChat }) {
       URL.revokeObjectURL(blobUrl)
     } catch (err) {
       console.error('Error downloading image, falling back to opening it:', err)
-      // If the storage bucket blocks cross-origin fetches, open the image
-      // directly so the user can still long-press/save it manually.
       window.open(post.image_url, '_blank')
     }
     setSavingImageId(null)
@@ -623,10 +592,6 @@ function Feed({ session, onStartChat }) {
     setSkillSearched(false)
   }
 
-  // Real substring matches first; if the exact spelling doesn't hit,
-  // fall back to a letter-overlap fuzzy match (>=60% of the typed letters
-  // found in the skill name) so misspellings like "grafics" still find
-  // "graphics".
   async function runSkillSearch() {
     const trimmed = skillQuery.trim()
     if (!trimmed) return
@@ -688,13 +653,21 @@ function Feed({ session, onStartChat }) {
   const filterInactiveText = isDark ? 'rgba(255,255,255,0.55)' : 'var(--text-muted)'
   const postDivider = isDark ? '#000000' : 'var(--app-border)'
 
+  const skillsButtonContent = (
+    <>
+      <Icon name="search" size={13} color="#fff" />
+      <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#fff' }}>Skills</span>
+    </>
+  )
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative' }}>
 
+      {/* TITLE — sticky, always visible, the permanent anchor of the header */}
       <div style={{
         padding: '18px 20px 14px',
         background: headerBg,
-        position: 'sticky', top: 0, zIndex: 30,
+        position: 'sticky', top: 0, zIndex: 120,
       }}>
         <div style={{ textAlign: 'left' }}>
           <h1 style={{
@@ -716,8 +689,14 @@ function Feed({ session, onStartChat }) {
             Harare Poly
           </p>
         </div>
+      </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px' }}>
+      {/* FILTERS + SKILLS BUTTON (uncollapsed) — normal in-flow content,
+          sits directly below the sticky title, so it naturally scrolls
+          UP and disappears behind the title as the page scrolls — no JS
+          needed for this part at all. */}
+      <div style={{ padding: '12px 20px 12px', background: headerBg }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '2px', flex: 1 }}>
             {FILTERS.map(f => {
               const isActive = activeFilter === f.id
@@ -740,20 +719,43 @@ function Feed({ session, onStartChat }) {
             })}
           </div>
 
-          <div
+          {!isCollapsed && (
+            <motion.div
+              layoutId="feed-skills-button"
+              onClick={openSkillSearch}
+              style={{
+                flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '5px 10px', borderRadius: '999px',
+                background: BRAND_PURPLE, cursor: 'pointer',
+                boxShadow: '0 3px 10px rgba(124,58,237,0.35)',
+              }}
+            >
+              {skillsButtonContent}
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      {/* DOCKED SKILLS BUTTON (collapsed) — fixed, sits just left of the
+          avatar bubble rendered by App.jsx. Shares layoutId with the
+          inline version above for a smooth "flies up and docks" animation. */}
+      <AnimatePresence>
+        {isCollapsed && (
+          <motion.div
+            layoutId="feed-skills-button"
             onClick={openSkillSearch}
             style={{
-              flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px',
+              position: 'fixed', top: '14px', right: '62px', zIndex: 160,
+              display: 'flex', alignItems: 'center', gap: '5px',
               padding: '5px 10px', borderRadius: '999px',
               background: BRAND_PURPLE, cursor: 'pointer',
               boxShadow: '0 3px 10px rgba(124,58,237,0.35)',
             }}
           >
-            <Icon name="search" size={13} color="#fff" />
-            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#fff' }}>Skills</span>
-          </div>
-        </div>
-      </div>
+            {skillsButtonContent}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {loading ? <FeedSkeleton /> : (
       <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
@@ -872,7 +874,6 @@ function Feed({ session, onStartChat }) {
                     <span>{post.content}</span>
                   </div>
                 ) : (
-                  // No image — bold, headline-style, more gravitas (matches News's announcement look)
                   <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800 }}>
                     <span>{post.content}</span>
                   </div>
@@ -883,8 +884,8 @@ function Feed({ session, onStartChat }) {
                 <div style={{
                   position: 'relative',
                   width: '100%',
-                  height: '340px', // fixed — reserved regardless of load state, this is what stops the collapse/reflow
-                  background: 'var(--app-border-soft)', // placeholder tone while the image is still downloading
+                  height: '340px',
+                  background: 'var(--app-border-soft)',
                   overflow: 'hidden',
                 }}>
                   <motion.img

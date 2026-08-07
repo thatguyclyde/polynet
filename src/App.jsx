@@ -7,7 +7,7 @@ import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
 import Feed from './Feed'
 import News from './News'
-
+import Walkthrough from './Walkthrough'
 import Polymart from './Polymart'
 import Profile from './Profile'
 import Chats from './Chats'
@@ -18,6 +18,10 @@ const TABS = [
   { id: 'polymart', icon: Store, label: 'Polymart' },
   { id: 'chats', icon: MessageCircle, label: 'Chats' },
 ]
+
+// Must match the threshold Feed.jsx uses to decide when its Skills button
+// docks next to the avatar — kept as one constant so the two stay in sync.
+const FEED_COLLAPSE_THRESHOLD = 30
 
 function ComingSoonDots() {
   return (
@@ -146,13 +150,20 @@ function App() {
   const [page, setPage] = useState('feed')
   const [showProfile, setShowProfile] = useState(false)
   const [myAvatar, setMyAvatar] = useState(null)
-
+const [showWalkthrough, setShowWalkthrough] = useState(false)
   const [pendingChat, setPendingChat] = useState(null)
   const [chatThreadOpen, setChatThreadOpen] = useState(false)
   const [listingDetailOpen, setListingDetailOpen] = useState(false)
 
   const [hasUnreadChats, setHasUnreadChats] = useState(false)
   const [hasUnreadNews, setHasUnreadNews] = useState(false)
+
+  // Tracks scroll position of the currently-active page's scroll container.
+  // Only Feed actually uses this (for its collapsing header), but it's
+  // tracked here since the scrollable element itself lives in App.jsx, and
+  // the avatar's "shift left" animation (driven by the same value) also
+  // lives here.
+  const [feedScrollY, setFeedScrollY] = useState(0)
 
   // True if a signup just happened and we're waiting on the person to tap
   // the confirmation link in their email. Persisted to sessionStorage so it
@@ -185,11 +196,13 @@ function App() {
       setNetworkError(false)
       const isAdmin = !!data?.is_admin
       setIsAdminUser(isAdmin)
+      // Admins don't collect full_name during onboarding — only title +
+      // department are required for them. Students still need all three.
       const complete = data && (
-  isAdminUser
-    ? !!(data.department && data.admin_title)   // full_name removed from the admin requirement
-    : !!(data.full_name && data.department && data.year_of_study)
-)
+        isAdmin
+          ? !!(data.department && data.admin_title)
+          : !!(data.full_name && data.department && data.year_of_study)
+      )
       setOnboarded(!!complete)
       if (data?.avatar_url) setMyAvatar(data.avatar_url)
     } catch (err) {
@@ -229,6 +242,14 @@ function App() {
 
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  // Reset scroll tracking whenever the active page changes — the scrollable
+  // container itself remounts on page change (key={page} below), so its
+  // scrollTop naturally resets too; this just keeps state in sync so the
+  // header doesn't render collapsed for a flash after switching tabs.
+  useEffect(() => {
+    setFeedScrollY(0)
+  }, [page])
 
   async function handleRetry() {
     setRetrying(true)
@@ -400,21 +421,34 @@ function App() {
     setPage('chats')
   }
 
+  function handleContentScroll(e) {
+    setFeedScrollY(e.currentTarget.scrollTop)
+  }
+
   if (splash) return <SplashScreen onDone={() => setSplash(false)} />
   if (checking) return <ComingSoonDots />
   if (confirmingOnReturn) return <LoggingInScreen />
   if (networkError) return <NetworkErrorScreen onRetry={handleRetry} retrying={retrying} />
 
   if (session && onboarded === false) {
-    return <Onboarding session={session} onComplete={() => setOnboarded(true)} />
-  }
+  return <Onboarding session={session} onComplete={() => setShowWalkthrough(true)} />
+}
 
+if (showWalkthrough) {
+  return (
+    <Walkthrough onFinish={() => {
+      setShowWalkthrough(false)
+      setOnboarded(true)
+    }} />
+  )
+}
   if (!session) {
     return <AuthScreen onSignUpSuccess={handleAwaitingConfirmation} />
   }
 
   if (session && onboarded === true) {
     const hideChrome = chatThreadOpen || listingDetailOpen
+    const feedIsCollapsed = page === 'feed' && feedScrollY > FEED_COLLAPSE_THRESHOLD
 
     return (
       <div style={{
@@ -440,6 +474,8 @@ function App() {
             <motion.div
               whileTap={{ scale: 0.85 }}
               onClick={() => setShowProfile(true)}
+              animate={{ x: feedIsCollapsed ? -50 : 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
               style={{
                 width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
                 background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -456,20 +492,21 @@ function App() {
           </div>
         )}
 
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: chatThreadOpen ? 0 : '70px' }}>
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: chatThreadOpen ? 0 : '58px' }}>
           <motion.div
             key={page}
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.65}
             onDragEnd={handleDragEnd}
+            onScroll={handleContentScroll}
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 420, damping: 38 }}
             style={{
               width: '100%', height: '100%', overflowY: 'auto', touchAction: 'pan-y',
             }}
           >
-            {page === 'feed' && <Feed session={session} onOpenChats={() => setPage('chats')} onStartChat={handleStartChat} />}
+            {page === 'feed' && <Feed session={session} onOpenChats={() => setPage('chats')} onStartChat={handleStartChat} scrollY={feedScrollY} />}
             {page === 'news' && <News session={session} isAdmin={isAdminUser} />}
             {page === 'polymart' && (
               <Polymart
@@ -489,6 +526,9 @@ function App() {
           </motion.div>
         </div>
 
+        {/* Bottom tab bar — reduced height (just enough for icon + label),
+            and the old sliding purple indicator line above the active tab
+            has been removed entirely. */}
         {!hideChrome && (
           <div style={{
             position: 'fixed',
@@ -496,7 +536,7 @@ function App() {
             background: 'var(--card-bg)',
             borderTop: '1px solid var(--app-border)',
             display: 'flex',
-            padding: '10px 0 18px',
+            padding: '8px 0 10px',
             zIndex: 100,
             boxShadow: '0 -4px 20px rgba(0,0,0,0.05)',
           }}>
@@ -514,19 +554,9 @@ function App() {
                     alignItems: 'center', gap: '3px', cursor: 'pointer', position: 'relative',
                   }}
                 >
-                  {isActive && (
-                    <motion.div
-                      layoutId="activeTabBackground"
-                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                      style={{
-                        position: 'absolute', top: '-4px', width: '40px', height: '4px',
-                        background: 'var(--app-accent)', borderRadius: '2px',
-                      }}
-                    />
-                  )}
                   <div style={{ position: 'relative' }}>
                     <IconComponent
-                      size={24}
+                      size={22}
                       strokeWidth={isActive ? 2.5 : 1.8}
                       color={isActive ? 'var(--text-strong)' : 'var(--text-muted)'}
                       style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}

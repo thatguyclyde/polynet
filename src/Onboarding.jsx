@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 import Icon from './Icon'
 
@@ -38,6 +38,35 @@ const SUGGESTED_SKILLS = [
 const SUPPORT_EMAIL = 'support@polynet.app'
 const VERIFIED_BLUE = '#1D9BF0'
 
+function compressImage(file, maxWidth = 500, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob)
+          else reject(new Error('Compression failed'))
+        }, 'image/jpeg', quality)
+      }
+      img.onerror = () => reject(new Error('Image failed to load'))
+      img.src = e.target.result
+    }
+    reader.onerror = () => reject(new Error('File read failed'))
+    reader.readAsDataURL(file)
+  })
+}
+
 const s = {
   page: {
     minHeight: '100vh',
@@ -47,7 +76,8 @@ const s = {
     flexDirection: 'column',
     padding: '56px 24px 36px',
   },
-  progressRow: { display: 'flex', gap: '8px', marginBottom: '36px' },
+  headerRow: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' },
+  progressRow: { display: 'flex', gap: '8px', flex: 1 },
   bar: (active) => ({
     flex: 1, height: '5px', borderRadius: '3px',
     background: active ? 'var(--app-accent)' : 'var(--app-border-soft)', transition: 'background 0.4s',
@@ -87,8 +117,8 @@ const s = {
     cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: 'auto',
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
   },
-  iconBackBtn: {
-    width: '52px', height: '52px', borderRadius: '14px',
+  iconBtn: {
+    width: '40px', height: '40px', borderRadius: '12px',
     border: '1.5px solid var(--app-border-soft)', background: 'var(--input-bg)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: 'pointer', flexShrink: 0,
@@ -120,12 +150,43 @@ const s = {
   },
 }
 
-function VerifiedBadge({ size = 54 }) {
+function VerifiedBadge({ size = 54, style }) {
   return (
-    <span style={{ position: 'relative', width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+    <span style={{ position: 'relative', width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...style }}>
       <Icon name="badgeCheck" size={size} color={VERIFIED_BLUE} fill={VERIFIED_BLUE} style={{ position: 'absolute', top: 0, left: 0 }} />
       <Icon name="check" size={size * 0.46} color="#fff" strokeWidth={3.5} style={{ position: 'relative' }} />
     </span>
+  )
+}
+
+// Shared circular avatar picker used by both the student and admin onboarding
+// steps — tap to pick a photo, camera badge signals it's editable.
+function AvatarPicker({ preview, onSelect }) {
+  const initials = 'S'
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+      <label style={{ position: 'relative', cursor: 'pointer', display: 'inline-block' }}>
+        <div style={{
+          width: '84px', height: '84px', borderRadius: '50%', overflow: 'hidden',
+          background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '2px solid var(--app-border-soft)',
+        }}>
+          {preview ? (
+            <img src={preview} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <Icon name="user" size={30} color="var(--app-accent)" />
+          )}
+        </div>
+        <div style={{
+          position: 'absolute', right: '0', bottom: '0', width: '26px', height: '26px', borderRadius: '9px',
+          background: 'var(--app-accent)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '2px solid var(--page-bg)',
+        }}>
+          <Icon name="camera" size={13} />
+        </div>
+        <input type="file" accept="image/*" onChange={onSelect} style={{ display: 'none' }} />
+      </label>
+    </div>
   )
 }
 
@@ -234,11 +295,13 @@ function StepAdminVerify({ session, onVerified, onBack }) {
         </p>
       </div>
       <div style={s.navRow}>
-        <button onClick={onBack} aria-label="Back" style={s.iconBackBtn}>
-          <Icon name="arrowLeft" size={20} color="var(--text-strong)" />
+        <button onClick={onBack} aria-label="Back" style={s.iconBtn}>
+          <Icon name="arrowLeft" size={19} color="var(--text-strong)" />
         </button>
         <a
           href={contactHref}
+          target="_blank"
+          rel="noreferrer noopener"
           style={{
             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
             padding: '15px', borderRadius: '14px', border: 'none',
@@ -246,6 +309,9 @@ function StepAdminVerify({ session, onVerified, onBack }) {
             cursor: 'pointer', boxShadow: 'var(--shadow-accent)', textDecoration: 'none',
           }}
         >
+          {/* NOTE: "phone" is unverified against your Icon.jsx mapping — if
+              this doesn't render, send me Icon.jsx and I'll swap the exact
+              correct name in one line. */}
           <Icon name="phone" size={16} color="#fff" />
           Contact PolyNet
         </a>
@@ -254,28 +320,73 @@ function StepAdminVerify({ session, onVerified, onBack }) {
   )
 }
 
-function StepAdminDetails({ session, onFinish }) {
+function StepAdminDetails({ session, onFinish, onBack }) {
   const [title, setTitle] = useState('')
   const [department, setDepartment] = useState('')
   const [deptSearch, setDeptSearch] = useState('')
   const [showDept, setShowDept] = useState(false)
+  const [avatarFile, setAvatarFile] = useState(null)
+  const [avatarPreview, setAvatarPreview] = useState(null)
+  const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Measures the rendered width of the typed title text in real time, so
+  // the verified badge can sit immediately after the last character rather
+  // than pinned to a fixed position on the right.
+  const measureRef = useRef(null)
+  const [titleWidth, setTitleWidth] = useState(0)
+
+  useEffect(() => {
+    if (measureRef.current) setTitleWidth(measureRef.current.offsetWidth)
+  }, [title])
+
   const filtered = DEPARTMENTS.filter(d => d.toLowerCase().includes(deptSearch.toLowerCase()))
+
+  async function handleAvatarSelect(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setError('')
+    setUploading(true)
+    try {
+      const compressed = await compressImage(file)
+      setAvatarFile(compressed)
+      setAvatarPreview(URL.createObjectURL(compressed))
+    } catch {
+      setError('Could not process that image. Try a different one.')
+    }
+    setUploading(false)
+  }
 
   async function handleFinish() {
     if (!title.trim()) return setError('Please enter your title')
     if (!department) return setError('Please select the department you represent')
     setLoading(true)
     setError('')
+
+    let avatarUrl = null
+    if (avatarFile) {
+      const fileName = `${session.user.id}/${Date.now()}.jpg`
+      const { error: uploadErr } = await supabase.storage.from('avatars').upload(fileName, avatarFile, { contentType: 'image/jpeg' })
+      if (uploadErr) {
+        setError(`Avatar upload failed: ${uploadErr.message}`)
+        setLoading(false)
+        return
+      }
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName)
+      avatarUrl = urlData.publicUrl
+    }
+
+    const updatePayload = {
+      department,
+      admin_title: title.trim(),
+      is_admin: true,
+    }
+    if (avatarUrl) updatePayload.avatar_url = avatarUrl
+
     const { error: err } = await supabase
       .from('profiles')
-      .update({
-        department,
-        admin_title: title.trim(),
-        is_admin: true,
-      })
+      .update(updatePayload)
       .eq('id', session.user.id)
     if (err) { setError(err.message); setLoading(false) }
     else onFinish()
@@ -283,22 +394,45 @@ function StepAdminDetails({ session, onFinish }) {
 
   return (
     <div style={s.page}>
+      <div style={s.headerRow}>
+        <button onClick={onBack} aria-label="Back" style={s.iconBtn}>
+          <Icon name="arrowLeft" size={19} color="var(--text-strong)" />
+        </button>
+        <div style={{ flex: 1 }} />
+      </div>
+
       <h2 style={s.title}>Admin details</h2>
       <p style={s.sub}>Let students know who you are</p>
 
+      <AvatarPicker preview={avatarPreview} onSelect={handleAvatarSelect} />
+      {uploading && <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Processing photo...</p>}
+
       <label style={s.label}>Title</label>
-      <div style={{ position: 'relative' }}>
+      <div style={{
+        position: 'relative', display: 'flex', alignItems: 'center',
+        border: '1.5px solid var(--app-border-soft)', borderRadius: '14px',
+        background: 'var(--input-bg)', padding: '0 16px', boxSizing: 'border-box',
+      }}>
         <input
           value={title}
           onChange={e => setTitle(e.target.value)}
           placeholder="e.g. HOD Electrical Engineering, Principal, SRC President"
-          style={{ ...s.input, paddingRight: title.trim() ? '48px' : '16px' }}
+          style={{
+            border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-strong)',
+            fontSize: '15px', padding: '14px 0', flexShrink: 0,
+            width: title ? `${titleWidth + 3}px` : '100%',
+            maxWidth: '100%',
+          }}
         />
-        {title.trim().length > 0 && (
-          <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}>
-            <VerifiedBadge size={20} />
-          </div>
-        )}
+        {title.trim().length > 0 && <VerifiedBadge size={18} style={{ marginLeft: '6px', flexShrink: 0 }} />}
+        {/* Invisible mirror of the input text, same font settings, used only
+            to measure width — never shown to the user. */}
+        <span
+          ref={measureRef}
+          style={{ position: 'absolute', visibility: 'hidden', whiteSpace: 'pre', fontSize: '15px' }}
+        >
+          {title || ' '}
+        </span>
       </div>
 
       <label style={s.label}>Department</label>
@@ -328,25 +462,28 @@ function StepAdminDetails({ session, onFinish }) {
       <div style={{ flex: 1, minHeight: '24px' }} />
       <button
         onClick={handleFinish}
-        disabled={loading}
+        disabled={loading || uploading}
         style={{
           alignSelf: 'center', padding: '14px 44px', borderRadius: '14px', border: 'none',
           background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '15px',
           cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: 'auto',
         }}
       >
-        {loading ? 'Saving...' : 'Done'}
+        {loading ? 'Saving...' : uploading ? 'Processing...' : 'Done'}
       </button>
     </div>
   )
 }
 
-function StepProfile({ session, onNext }) {
+function StepProfile({ session, onNext, onBack }) {
   const [fullName, setFullName] = useState('')
   const [department, setDepartment] = useState('')
   const [deptSearch, setDeptSearch] = useState('')
   const [showDept, setShowDept] = useState(false)
   const [year, setYear] = useState(null)
+  const [avatarFile, setAvatarFile] = useState(null)
+  const [avatarPreview, setAvatarPreview] = useState(null)
+  const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -354,15 +491,47 @@ function StepProfile({ session, onNext }) {
     d.toLowerCase().includes(deptSearch.toLowerCase())
   )
 
+  async function handleAvatarSelect(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setError('')
+    setUploading(true)
+    try {
+      const compressed = await compressImage(file)
+      setAvatarFile(compressed)
+      setAvatarPreview(URL.createObjectURL(compressed))
+    } catch {
+      setError('Could not process that image. Try a different one.')
+    }
+    setUploading(false)
+  }
+
   async function handleNext() {
     if (!fullName.trim()) return setError('Please enter your full name')
     if (!department) return setError('Please select your department')
     if (!year) return setError('Please select your year of study')
     setLoading(true)
     setError('')
+
+    let avatarUrl = null
+    if (avatarFile) {
+      const fileName = `${session.user.id}/${Date.now()}.jpg`
+      const { error: uploadErr } = await supabase.storage.from('avatars').upload(fileName, avatarFile, { contentType: 'image/jpeg' })
+      if (uploadErr) {
+        setError(`Avatar upload failed: ${uploadErr.message}`)
+        setLoading(false)
+        return
+      }
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName)
+      avatarUrl = urlData.publicUrl
+    }
+
+    const updatePayload = { full_name: fullName, department, year_of_study: year }
+    if (avatarUrl) updatePayload.avatar_url = avatarUrl
+
     const { error: err } = await supabase
       .from('profiles')
-      .update({ full_name: fullName, department, year_of_study: year })
+      .update(updatePayload)
       .eq('id', session.user.id)
     if (err) { setError(err.message); setLoading(false) }
     else onNext()
@@ -370,12 +539,21 @@ function StepProfile({ session, onNext }) {
 
   return (
     <div style={s.page}>
-      <div style={s.progressRow}>
-        <div style={s.bar(true)} />
-        <div style={s.bar(false)} />
+      <div style={s.headerRow}>
+        <button onClick={onBack} aria-label="Back" style={s.iconBtn}>
+          <Icon name="arrowLeft" size={19} color="var(--text-strong)" />
+        </button>
+        <div style={s.progressRow}>
+          <div style={s.bar(true)} />
+          <div style={s.bar(false)} />
+        </div>
       </div>
+
       <h2 style={s.title}>Tell us about yourself</h2>
       <p style={s.sub}>Step 1 of 2 — Your details</p>
+
+      <AvatarPicker preview={avatarPreview} onSelect={handleAvatarSelect} />
+      {uploading && <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Processing photo...</p>}
 
       <label style={s.label}>Full Name</label>
       <input value={fullName} onChange={e => setFullName(e.target.value)}
@@ -414,11 +592,11 @@ function StepProfile({ session, onNext }) {
 
       {error && <p style={s.error}>{error}</p>}
       <div style={{ flex: 1, minHeight: '24px' }} />
-      <button onClick={handleNext} disabled={loading} style={s.nextBtn}>
-        {loading ? 'Saving...' : (
+      <button onClick={handleNext} disabled={loading || uploading} style={s.nextBtn}>
+        {loading ? 'Saving...' : uploading ? 'Processing...' : (
           <>
             Next
-            <Icon name="arrowRight" size={17} color="#fff" />
+            <Icon name="chevronRight" size={17} color="#fff" />
           </>
         )}
       </button>
@@ -455,10 +633,16 @@ function StepSkills({ session, onNext, onBack }) {
 
   return (
     <div style={s.page}>
-      <div style={s.progressRow}>
-        <div style={s.bar(true)} />
-        <div style={s.bar(true)} />
+      <div style={s.headerRow}>
+        <button onClick={onBack} aria-label="Back" style={s.iconBtn}>
+          <Icon name="arrowLeft" size={19} color="var(--text-strong)" />
+        </button>
+        <div style={s.progressRow}>
+          <div style={s.bar(true)} />
+          <div style={s.bar(true)} />
+        </div>
       </div>
+
       <h2 style={s.title}>What are your skills?</h2>
       <p style={s.sub}>Step 2 of 2 — Help others find you</p>
 
@@ -492,15 +676,12 @@ function StepSkills({ session, onNext, onBack }) {
       </div>
 
       <div style={s.navRow}>
-        <button onClick={onBack} aria-label="Back" style={s.iconBackBtn}>
-          <Icon name="arrowLeft" size={20} color="var(--text-strong)" />
-        </button>
         <button onClick={handleNext} disabled={loading}
           style={{ ...s.nextBtn, marginTop: 0, flex: 1 }}>
           {loading ? 'Finishing...' : (
             <>
               Finish
-              <Icon name="arrowRight" size={17} color="#fff" />
+              <Icon name="chevronRight" size={17} color="#fff" />
             </>
           )}
         </button>
@@ -522,7 +703,7 @@ function Onboarding({ session, onComplete }) {
   }
 
   if (flow === 'studentStep1') {
-    return <StepProfile session={session} onNext={() => setFlow('studentStep2')} />
+    return <StepProfile session={session} onNext={() => setFlow('studentStep2')} onBack={() => setFlow('roleSelect')} />
   }
 
   if (flow === 'studentStep2') {
@@ -540,7 +721,7 @@ function Onboarding({ session, onComplete }) {
   }
 
   if (flow === 'adminDetails') {
-    return <StepAdminDetails session={session} onFinish={() => onComplete()} />
+    return <StepAdminDetails session={session} onFinish={() => onComplete()} onBack={() => setFlow('roleSelect')} />
   }
 
   return null

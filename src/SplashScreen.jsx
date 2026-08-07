@@ -58,7 +58,7 @@ function SplashScreen({ onDone }) {
         color: isDark ? 'rgba(255,255,255,0.55)' : '#1A1A2E',
         animation: 'splashFadeIn 0.7s ease 0.3s both',
       }}>
-        CRK presents
+        By students, For students
       </div>
 
       <style>{`
