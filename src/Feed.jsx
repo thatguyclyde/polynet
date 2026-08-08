@@ -20,6 +20,7 @@ const FILTERS = [
 const LIKE_RED = '#ED4956'
 const BRAND_PURPLE = '#7C3AED'
 const FUZZY_THRESHOLD = 0.6
+const COLLAPSE_THRESHOLD = 30 // must match FEED_COLLAPSE_THRESHOLD in App.jsx
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -279,6 +280,8 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const [commentCounts, setCommentCounts] = useState({})
   const [likePulse, setLikePulse] = useState({})
 
+  const [loadedImageIds, setLoadedImageIds] = useState(new Set())
+
   const [burstId, setBurstId] = useState(null)
   const [openComments, setOpenComments] = useState(null)
   const [commentsByPost, setCommentsByPost] = useState({})
@@ -302,11 +305,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const [skillSearching, setSkillSearching] = useState(false)
   const [skillSearched, setSkillSearched] = useState(false)
 
-  // Tracks which post images have finished downloading, so each image can
-  // fade in instead of popping in and shifting layout.
-  const [loadedImageIds, setLoadedImageIds] = useState(new Set())
-
-  const isCollapsed = scrollY > 30 // must match FEED_COLLAPSE_THRESHOLD in App.jsx
+  const isCollapsed = scrollY > COLLAPSE_THRESHOLD
 
   useEffect(() => {
     fetchPosts()
@@ -536,6 +535,13 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
       alert("This post doesn't have an image to save.")
       return
     }
+
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    if (isMobile) {
+      window.open(post.image_url, '_blank')
+      return
+    }
+
     setSavingImageId(post.id)
     try {
       const response = await fetch(post.image_url, { mode: 'cors' })
@@ -663,7 +669,9 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative' }}>
 
-      {/* TITLE — sticky, always visible, the permanent anchor of the header */}
+      {/* TITLE — sticky within Feed's own root, which is a direct child of
+          the actual scrolling container in App.jsx. This is what stays put
+          while everything below it scrolls up and disappears underneath it. */}
       <div style={{
         padding: '18px 20px 14px',
         background: headerBg,
@@ -691,11 +699,10 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
         </div>
       </div>
 
-      {/* FILTERS + SKILLS BUTTON (uncollapsed) — normal in-flow content,
-          sits directly below the sticky title, so it naturally scrolls
-          UP and disappears behind the title as the page scrolls — no JS
-          needed for this part at all. */}
-      <div style={{ padding: '12px 20px 12px', background: headerBg }}>
+      {/* FILTERS + INLINE SKILLS BUTTON — normal document flow, NOT sticky,
+          NOT fixed. This is what makes it scroll up and vanish behind the
+          sticky title above with zero extra JS. */}
+      <div style={{ padding: '0 20px 12px', background: headerBg }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '2px', flex: 1 }}>
             {FILTERS.map(f => {
@@ -719,6 +726,10 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
             })}
           </div>
 
+          {/* Inline copy — only rendered while NOT collapsed. Shares
+              layoutId with the fixed docked copy below, so Framer Motion
+              animates smoothly between the two positions the moment
+              isCollapsed flips. */}
           {!isCollapsed && (
             <motion.div
               layoutId="feed-skills-button"
@@ -736,9 +747,10 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
         </div>
       </div>
 
-      {/* DOCKED SKILLS BUTTON (collapsed) — fixed, sits just left of the
-          avatar bubble rendered by App.jsx. Shares layoutId with the
-          inline version above for a smooth "flies up and docks" animation. */}
+      {/* DOCKED SKILLS BUTTON — fixed to the viewport, appears only once
+          collapsed, sitting just left of App.jsx's avatar bubble. zIndex
+          160 keeps it above the avatar (150) so it stays clickable and
+          visually on top during the transition. */}
       <AnimatePresence>
         {isCollapsed && (
           <motion.div

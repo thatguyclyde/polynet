@@ -144,13 +144,18 @@ function App() {
   // null = not yet known (still checking or errored), true/false = confirmed
   const [onboarded, setOnboarded] = useState(null)
   const [isAdminUser, setIsAdminUser] = useState(false)
+  // Persisted (DB-backed) — whether this account has ever completed the
+  // walkthrough. Defaults to true so a session that hasn't resolved yet
+  // never briefly flashes the walkthrough before checkUserProfile corrects
+  // it; checkUserProfile sets the real value once it knows.
+  const [hasSeenWalkthrough, setHasSeenWalkthrough] = useState(true)
   const [checking, setChecking] = useState(true)
   const [networkError, setNetworkError] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [page, setPage] = useState('feed')
   const [showProfile, setShowProfile] = useState(false)
   const [myAvatar, setMyAvatar] = useState(null)
-const [showWalkthrough, setShowWalkthrough] = useState(false)
+
   const [pendingChat, setPendingChat] = useState(null)
   const [chatThreadOpen, setChatThreadOpen] = useState(false)
   const [listingDetailOpen, setListingDetailOpen] = useState(false)
@@ -187,7 +192,7 @@ const [showWalkthrough, setShowWalkthrough] = useState(false)
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('full_name, department, year_of_study, avatar_url, is_admin, admin_title')
+        .select('full_name, department, year_of_study, avatar_url, is_admin, admin_title, has_seen_walkthrough')
         .eq('id', userSession.user.id)
         .maybeSingle()
 
@@ -204,6 +209,7 @@ const [showWalkthrough, setShowWalkthrough] = useState(false)
           : !!(data.full_name && data.department && data.year_of_study)
       )
       setOnboarded(!!complete)
+      setHasSeenWalkthrough(!!data?.has_seen_walkthrough)
       if (data?.avatar_url) setMyAvatar(data.avatar_url)
     } catch (err) {
       // A genuine failure (no connection, DNS, etc.) — do NOT assume
@@ -236,6 +242,7 @@ const [showWalkthrough, setShowWalkthrough] = useState(false)
         // to run and correct it.
         setOnboarded(null)
         setIsAdminUser(false)
+        setHasSeenWalkthrough(true)
         setChecking(false)
       }
     })
@@ -339,6 +346,25 @@ const [showWalkthrough, setShowWalkthrough] = useState(false)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [awaitingConfirmation])
 
+  // Persists "seen walkthrough" to the DB before letting the person into the
+  // app proper — so a refresh mid-flow never causes it to re-show or get
+  // silently skipped, and it survives across devices/sessions for the same
+  // account. Walkthrough.jsx itself stays purely presentational and doesn't
+  // need to know about Supabase at all.
+  async function handleWalkthroughFinish() {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ has_seen_walkthrough: true })
+      .eq('id', session.user.id)
+    if (error) {
+      // Don't trap the person here over a non-critical write failing — log
+      // it and let them through anyway; worst case they see this once more
+      // on their next login.
+      console.error('Error marking walkthrough as seen:', error.message)
+    }
+    setHasSeenWalkthrough(true)
+  }
+
   useEffect(() => {
     if (!session) return
 
@@ -431,22 +457,21 @@ const [showWalkthrough, setShowWalkthrough] = useState(false)
   if (networkError) return <NetworkErrorScreen onRetry={handleRetry} retrying={retrying} />
 
   if (session && onboarded === false) {
-  return <Onboarding session={session} onComplete={() => setShowWalkthrough(true)} />
-}
+    // Onboarding writes directly to the DB itself — once it calls onComplete,
+    // we know the profile row is genuinely complete, so it's safe to flip
+    // this locally rather than re-fetching.
+    return <Onboarding session={session} onComplete={() => setOnboarded(true)} />
+  }
 
-if (showWalkthrough) {
-  return (
-    <Walkthrough onFinish={() => {
-      setShowWalkthrough(false)
-      setOnboarded(true)
-    }} />
-  )
-}
+  if (session && onboarded === true && !hasSeenWalkthrough) {
+    return <Walkthrough onFinish={handleWalkthroughFinish} />
+  }
+
   if (!session) {
     return <AuthScreen onSignUpSuccess={handleAwaitingConfirmation} />
   }
 
-  if (session && onboarded === true) {
+  if (session && onboarded === true && hasSeenWalkthrough) {
     const hideChrome = chatThreadOpen || listingDetailOpen
     const feedIsCollapsed = page === 'feed' && feedScrollY > FEED_COLLAPSE_THRESHOLD
 
