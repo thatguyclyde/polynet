@@ -287,14 +287,13 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-
-      <div style={{
+<div style={{
         padding: '18px 20px 14px',
         background: headerBg,
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
+        textAlign: 'left',
       }}>
-        <div style={{ textAlign: 'left' }}>
-          <h1 style={{
+        <h1 style={{
             margin: 0,
             fontFamily: "'Baloo 2', -apple-system, BlinkMacSystemFont, sans-serif",
             fontSize: '26px',
@@ -308,49 +307,12 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
             display: 'inline-block',
           }}>
             PolyMart
-          </h1>
-          <p style={{ margin: '2px 0 0', fontSize: '11px', color: headerSubtitleColor, fontWeight: 600 }}>
+        </h1>
+        <p style={{ margin: '2px 0 0', fontSize: '11px', color: headerSubtitleColor, fontWeight: 600 }}>
             Buy & sell on campus
-          </p>
-        </div>
-
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search PolyMart..."
-          style={{
-            width: '100%', padding: '11px 14px', borderRadius: '12px', marginTop: '14px',
-            border: '1.5px solid var(--app-border)', background: 'var(--input-bg)',
-            fontSize: '13.5px', outline: 'none', boxSizing: 'border-box', marginBottom: '12px', color: 'var(--text-strong)',
-          }}
-        />
-
-        {/* Category filter chips — lucide icons, purple-edged when active */}
-        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
-          {CATEGORIES.map(cat => {
-            const isActive = activeCat === cat.id
-            return (
-              <div
-                key={cat.id}
-                onClick={() => setActiveCat(cat.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '5px',
-                  padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
-                  whiteSpace: 'nowrap', cursor: 'pointer',
-                  border: isActive ? `1.5px solid ${FILTER_PURPLE_EDGE}` : `1.5px solid ${filterInactiveBorder}`,
-                  background: isActive ? FILTER_ACTIVE_BG : 'transparent',
-                  color: isActive ? FILTER_ACTIVE_TEXT : filterInactiveText,
-                  transition: 'border-color 0.15s, background 0.15s, color 0.15s',
-                }}
-              >
-                <Icon name={cat.icon} size={14} color={isActive ? FILTER_ACTIVE_TEXT : filterInactiveText} />
-                {cat.label}
-              </div>
-            )
-          })}
-        </div>
+        </p>
       </div>
-
+      
       {/* Floating Action Button */}
       <div
         onClick={openComposer}
@@ -519,7 +481,46 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       {/* Listings area — slightly darker background in light mode so cards
           stand out clearly from the page behind them. paddingTop accounts
           for the now-fixed header above it. */}
-      <div style={{ background: listingsAreaBg, minHeight: '40vh', paddingTop: '190px' }}>
+      <div style={{ background: listingsAreaBg, minHeight: '40vh', paddingTop: '78px' }}>
+
+        <div style={{ padding: '12px 20px 4px' }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search PolyMart..."
+            style={{
+              width: '100%', padding: '11px 14px', borderRadius: '12px',
+              border: '1.5px solid var(--app-border)', background: 'var(--input-bg)',
+              fontSize: '13.5px', outline: 'none', boxSizing: 'border-box', marginBottom: '12px', color: 'var(--text-strong)',
+            }}
+          />
+
+          {/* Category filter chips — now scrolls away with the page */}
+          <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px', marginBottom: '4px' }}>
+            {CATEGORIES.map(cat => {
+              const isActive = activeCat === cat.id
+              return (
+                <div
+                  key={cat.id}
+                  onClick={() => setActiveCat(cat.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '5px',
+                    padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
+                    whiteSpace: 'nowrap', cursor: 'pointer',
+                    border: isActive ? `1.5px solid ${FILTER_PURPLE_EDGE}` : `1.5px solid ${filterInactiveBorder}`,
+                    background: isActive ? FILTER_ACTIVE_BG : 'transparent',
+                    color: isActive ? FILTER_ACTIVE_TEXT : filterInactiveText,
+                    transition: 'border-color 0.15s, background 0.15s, color 0.15s',
+                  }}
+                >
+                  <Icon name={cat.icon} size={14} color={isActive ? FILTER_ACTIVE_TEXT : filterInactiveText} />
+                  {cat.label}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
         {filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 30px' }}>
             <Icon name="shoppingBag" size={40} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '12px' }} />

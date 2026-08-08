@@ -7,6 +7,7 @@ import { useTheme } from './ThemeContext'
 
 const CHAT_BORDER_PURPLE = 'rgba(124,58,237,0.35)'
 const UNREAD_BLUE = '#1D9BF0'
+const VERIFIED_BLUE = '#1D9BF0'
 const CONV_FIELDS = 'id, listing_id, buyer_id, seller_id, status, last_message_at, buyer_last_read_at, seller_last_read_at, last_sender_id'
 
 function timeAgo(dateStr) {
@@ -21,6 +22,35 @@ function timeAgo(dateStr) {
 function messageTime(dateStr) {
   if (!dateStr) return ''
   return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+// Small blue check badge — same visual language as the "Verified" badge in
+// News.jsx, reused here to mark admin accounts wherever their name shows.
+function VerifiedBadge({ size = 13 }) {
+  return (
+    <span
+      title="Admin"
+      style={{
+        position: 'relative', width: size, height: size, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}
+    >
+      <Icon
+        name="badgeCheck"
+        size={size}
+        color={VERIFIED_BLUE}
+        fill={VERIFIED_BLUE}
+        style={{ position: 'absolute', top: 0, left: 0 }}
+      />
+      <Icon
+        name="check"
+        size={size * 0.46}
+        color="#fff"
+        strokeWidth={3.5}
+        style={{ position: 'relative' }}
+      />
+    </span>
+  )
 }
 
 function InitialsAvatar({ name, url, size = 44, onClick }) {
@@ -275,8 +305,8 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
       .select(`
         id, listing_id, buyer_id, seller_id, status, last_message, last_message_at, created_at,
         buyer_last_read_at, seller_last_read_at, last_sender_id,
-        buyer:profiles!conversations_buyer_id_fkey(full_name, avatar_url),
-        seller:profiles!conversations_seller_id_fkey(full_name, avatar_url)
+        buyer:profiles!conversations_buyer_id_fkey(full_name, avatar_url, is_admin),
+        seller:profiles!conversations_seller_id_fkey(full_name, avatar_url, is_admin)
       `)
       .or(`buyer_id.eq.${session.user.id},seller_id.eq.${session.user.id}`)
       .order('last_message_at', { ascending: false })
@@ -294,6 +324,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
       otherName: isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student'),
       otherAvatar: otherProfile?.avatar_url || null,
       otherUserId: isBuyer ? c.seller_id : c.buyer_id,
+      otherIsAdmin: !isSelfChat && !!otherProfile?.is_admin,
       status: c.status,
       buyerId: c.buyer_id,
       sellerId: c.seller_id,
@@ -392,6 +423,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
             const isBuyer = c.buyer_id === session.user.id
             const otherProfile = isSelfChat ? c.buyer : (isBuyer ? c.seller : c.buyer)
             const otherName = isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student')
+            const isOtherAdmin = !isSelfChat && !!otherProfile?.is_admin
             const isPendingForMe = c.status === 'pending' && !isSelfChat && session.user.id === c.seller_id
             const unread = isUnreadForMe(c, session.user.id)
             const isLast = idx === conversations.length - 1
@@ -413,7 +445,15 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
                 <InitialsAvatar name={otherName} url={otherProfile?.avatar_url} size={48} />
                 <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: unread ? 800 : 700, fontSize: '13.5px', color: 'var(--text-strong)' }}>{otherName}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+                      <span style={{
+                        fontWeight: unread ? 800 : 700, fontSize: '13.5px', color: 'var(--text-strong)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {otherName}
+                      </span>
+                      {isOtherAdmin && <VerifiedBadge size={12} />}
+                    </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                       {unread && (
                         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: UNREAD_BLUE, flexShrink: 0 }} />
@@ -455,6 +495,11 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   const [deciding, setDeciding] = useState(false)
   const [viewingProfileId, setViewingProfileId] = useState(null)
   const [showActionSheet, setShowActionSheet] = useState(false)
+  // Fetched independently of whatever the caller passed in — a chat opened
+  // via "Message Seller" (Polymart/Feed) won't have otherIsAdmin set on the
+  // conversation object the way one opened from the Inbox row does, so this
+  // stays the single source of truth regardless of entry point.
+  const [otherIsAdmin, setOtherIsAdmin] = useState(!!conversation.otherIsAdmin)
   const bottomRef = useRef(null)
 
   const isSelfChat = conversation.buyerId === conversation.sellerId
@@ -475,6 +520,22 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
     const interval = setInterval(() => fetchMessages(false), 4000)
     return () => clearInterval(interval)
   }, [conversation.id])
+
+  useEffect(() => {
+    if (isSelfChat) return
+    let cancelled = false
+    supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', conversation.otherUserId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) { console.error('Error checking admin status:', error.message); return }
+        setOtherIsAdmin(!!data?.is_admin)
+      })
+    return () => { cancelled = true }
+  }, [conversation.otherUserId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -585,9 +646,18 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
     onBack()
   }
 
+  function openOtherProfile() {
+    if (isSelfChat) return
+    setViewingProfileId(conversation.otherUserId)
+  }
+
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-      {/* HEADER — now fixed, stays put regardless of message-list scroll */}
+    // height (not minHeight) + overflow:hidden bounds this to the viewport,
+    // so the message list's overflowY:auto below is the thing that scrolls
+    // — not the page. That's also what keeps the "PolyNet" watermark fixed:
+    // it lives in a sibling container that no longer grows past the screen.
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+      {/* HEADER — fixed, stays put regardless of message-list scroll */}
       <div style={{
         padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
         display: 'flex', alignItems: 'center', gap: '12px',
@@ -600,10 +670,26 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
           name={conversation.otherName}
           url={conversation.otherAvatar}
           size={36}
-          onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
+          onClick={!isSelfChat ? openOtherProfile : undefined}
         />
-        <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-strong)' }}>{conversation.otherName}</div>
+        {/* Tapping the name area (the "top bar") opens the same read-only
+            profile card as the avatar — just a bigger, more discoverable
+            hit target. */}
+        <div
+          onClick={!isSelfChat ? openOtherProfile : undefined}
+          style={{
+            textAlign: 'left', flex: 1, minWidth: 0,
+            cursor: !isSelfChat ? 'pointer' : 'default',
+            display: 'flex', alignItems: 'center', gap: '5px',
+          }}
+        >
+          <div style={{
+            fontWeight: 700, fontSize: '14px', color: 'var(--text-strong)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {conversation.otherName}
+          </div>
+          {otherIsAdmin && <VerifiedBadge size={13} />}
         </div>
 
         <div onClick={() => setShowActionSheet(true)} style={{ cursor: 'pointer', color: 'var(--text-strong)', padding: '4px' }}>
@@ -666,7 +752,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
           </span>
         </div>
 
-        <div style={{ position: 'relative', height: '100%', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
+        <div style={{ position: 'relative', height: '100%', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {loading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -708,7 +794,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
                           name={conversation.otherName}
                           url={conversation.otherAvatar}
                           size={22}
-                          onClick={!isSelfChat ? () => setViewingProfileId(conversation.otherUserId) : undefined}
+                          onClick={!isSelfChat ? openOtherProfile : undefined}
                         />
                       )}
                       <div style={{
@@ -736,8 +822,8 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         </div>
       </div>
 
-      {/* MESSAGE INPUT BAR — now fixed at the bottom, no longer scrolls
-          away with the message list */}
+      {/* MESSAGE INPUT BAR — fixed at the bottom, doesn't scroll away with
+          the message list */}
       <div style={{
         padding: '12px 16px', background: 'var(--card-bg)', borderTop: '1px solid var(--app-border)',
         display: 'flex', gap: '8px',
