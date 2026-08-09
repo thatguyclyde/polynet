@@ -120,6 +120,153 @@ function DislikeButton({ isDisliked, count, pulseKey, onClick }) {
   )
 }
 
+// Delete confirmation — same visual pattern as Feed.jsx's ConfirmSheet,
+// replacing the old plain window.confirm().
+function ConfirmSheet({ title, body, confirmLabel, danger, onConfirm, onCancel }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 18px' }} />
+        <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'center' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>{body}</p>
+        <button
+          onClick={onConfirm}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+            background: danger ? '#EF4444' : POST_EDGE_PURPLE, color: '#fff',
+            fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', marginBottom: '10px',
+          }}
+        >
+          {confirmLabel}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px',
+            border: '1px solid var(--app-border-soft)', background: 'transparent',
+            color: 'var(--text-strong)', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </motion.div>
+    </div>
+  )
+}
+
+// Full share sheet — same pattern as Feed.jsx's ShareSheet, with a Download
+// Image option added for articles that have one.
+function ShareSheet({ article, onClose, onDownload }) {
+  const [copied, setCopied] = useState(false)
+  const url = article?.shareUrl
+
+  function shareToWhatsApp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent('Check out this update on PolyNet: ' + url)}`, '_blank')
+    onClose()
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => { setCopied(false); onClose() }, 900)
+    } catch {
+      onClose()
+    }
+  }
+
+  async function systemShare() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'PolyNet News', text: 'Check out this update on PolyNet', url })
+      } catch {}
+    }
+    onClose()
+  }
+
+  function downloadImage() {
+    onDownload(article)
+    onClose()
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 12px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 4px' }} />
+        <h3 style={{ margin: '10px 12px 14px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-strong)' }}>Share article</h3>
+
+        <div onClick={shareToWhatsApp} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(37,211,102,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="whatsapp" size={19} color="#25D366" />
+          </div>
+          <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>WhatsApp</span>
+        </div>
+
+        <div onClick={copyLink} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="copy" size={17} color="var(--app-accent)" />
+          </div>
+          <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>{copied ? 'Link copied!' : 'Copy Link'}</span>
+        </div>
+
+        {article?.image_url && (
+          <div onClick={downloadImage} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="download" size={17} color="var(--app-accent)" />
+            </div>
+            <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>Download Image</span>
+          </div>
+        )}
+
+        {typeof navigator !== 'undefined' && navigator.share && (
+          <div onClick={systemShare} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="share-2" size={18} color="var(--app-accent)" />
+            </div>
+            <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>More options</span>
+          </div>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
 function News({ session, isAdmin }) {
   const { isDark } = useTheme()
   const [articles, setArticles] = useState([])
@@ -145,6 +292,9 @@ function News({ session, isAdmin }) {
   const [openMenuId, setOpenMenuId] = useState(null)
   const [viewingArticle, setViewingArticle] = useState(null)
   const tapTimer = useRef(null)
+
+  const [deleteArticleId, setDeleteArticleId] = useState(null)
+  const [sharingArticle, setSharingArticle] = useState(null)
 
   // The read timestamp from BEFORE this visit — anything newer than this
   // gets the purple "new" edge. Stays null until initReadState resolves,
@@ -406,14 +556,21 @@ function News({ session, isAdmin }) {
     setOpenMenuId(null)
   }
 
-  async function deleteArticle(articleId) {
-    if (window.confirm('Are you sure you want to delete this article?')) {
-      const { error } = await supabase.from('news_articles').delete().eq('id', articleId)
-      if (!error) {
-        setArticles(prev => prev.filter(a => a.id !== articleId))
-        setOpenMenuId(null)
-        if (viewingArticle?.id === articleId) setViewingArticle(null)
-      }
+  function requestDeleteArticle(articleId) {
+    setOpenMenuId(null)
+    setDeleteArticleId(articleId)
+  }
+
+  async function performDeleteArticle() {
+    const articleId = deleteArticleId
+    setDeleteArticleId(null)
+    if (!articleId) return
+    const { error } = await supabase.from('news_articles').delete().eq('id', articleId)
+    if (!error) {
+      setArticles(prev => prev.filter(a => a.id !== articleId))
+      if (viewingArticle?.id === articleId) setViewingArticle(null)
+    } else {
+      console.error('Error deleting article:', error.message)
     }
   }
 
@@ -422,14 +579,35 @@ function News({ session, isAdmin }) {
     setOpenMenuId(null)
   }
 
-  function shareArticle(article) {
-    if (navigator.share) {
-      navigator.share({ title: 'PolyNet News', text: 'Check out this update on PolyNet' })
-    } else {
-      alert('Article link copied to clipboard!')
-      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#article-${article.id}`)
-    }
+  function openShareSheet(article) {
     setOpenMenuId(null)
+    const url = `${window.location.origin}${window.location.pathname}#article-${article.id}`
+    setSharingArticle({ ...article, shareUrl: url })
+  }
+
+  async function handleDownloadImage(article) {
+    if (!article?.image_url) return
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    if (isMobile) {
+      window.open(article.image_url, '_blank')
+      return
+    }
+    try {
+      const response = await fetch(article.image_url, { mode: 'cors' })
+      if (!response.ok) throw new Error('Fetch failed')
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `polynet-news-${article.id}.jpg`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      console.error('Error downloading image, falling back to opening it:', err)
+      window.open(article.image_url, '_blank')
+    }
   }
 
   const headerBg = isDark ? '#000000' : '#FFFFFF'
@@ -442,7 +620,7 @@ function News({ session, isAdmin }) {
         padding: '18px 20px 16px',
         background: headerBg,
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
-       }}>
+      }}>
         <div style={{ textAlign: 'left' }}>
           <h1 style={{
             margin: 0,
@@ -735,7 +913,7 @@ function News({ session, isAdmin }) {
                         }}>
                           {isOwnArticle && (
                             <div
-                              onClick={() => deleteArticle(article.id)}
+                              onClick={() => requestDeleteArticle(article.id)}
                               style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                             >
                               <Icon name="trash-2" size={14} />
@@ -752,7 +930,7 @@ function News({ session, isAdmin }) {
                             </div>
                           )}
                           <div
-                            onClick={() => shareArticle(article)}
+                            onClick={() => openShareSheet(article)}
                             style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
                           >
                             <Icon name="share-2" size={14} />
@@ -780,7 +958,7 @@ function News({ session, isAdmin }) {
                       }}>
                         {isOwnArticle && (
                           <div
-                            onClick={() => deleteArticle(article.id)}
+                            onClick={() => requestDeleteArticle(article.id)}
                             style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                           >
                             <Icon name="trash-2" size={14} />
@@ -797,7 +975,7 @@ function News({ session, isAdmin }) {
                           </div>
                         )}
                         <div
-                          onClick={() => shareArticle(article)}
+                          onClick={() => openShareSheet(article)}
                           style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
                         >
                           <Icon name="share-2" size={14} />
@@ -811,7 +989,7 @@ function News({ session, isAdmin }) {
                 {article.body && (
                   hasImage ? (
                     <>
-                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{preview}</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6, textAlign: 'left', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{preview}</p>
                       {article.body.length > 140 && (
                         <div onClick={() => setExpandedId(isExpanded ? null : article.id)} style={{ marginTop: '8px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}>
                           {isExpanded ? 'Show less' : 'Read more'}
@@ -820,7 +998,7 @@ function News({ session, isAdmin }) {
                     </>
                   ) : (
                     <>
-                      <p style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', lineHeight: 1.5 }}>{preview}</p>
+                      <p style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', lineHeight: 1.5, textAlign: 'left', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{preview}</p>
                       {article.body.length > 140 && (
                         <div onClick={() => setExpandedId(isExpanded ? null : article.id)} style={{ marginTop: '8px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}>
                           {isExpanded ? 'Show less' : 'Read more'}
@@ -943,7 +1121,7 @@ function News({ session, isAdmin }) {
                     >
                       {viewingArticle.author_id === session.user.id && (
                         <div
-                          onClick={() => deleteArticle(viewingArticle.id)}
+                          onClick={() => requestDeleteArticle(viewingArticle.id)}
                           style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                         >
                           <Icon name="trash-2" size={14} />
@@ -960,7 +1138,7 @@ function News({ session, isAdmin }) {
                         </div>
                       )}
                       <div
-                        onClick={() => shareArticle(viewingArticle)}
+                        onClick={() => openShareSheet(viewingArticle)}
                         style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
                       >
                         <Icon name="share-2" size={14} />
@@ -981,7 +1159,7 @@ function News({ session, isAdmin }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
               }}
             >
-              <span style={{ color: '#fff', fontWeight: 700, fontSize: '14px', flex: 1 }}>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: '14px', flex: 1, textAlign: 'left', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                 {viewingArticle.body || 'PolyNet News'}
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1000,6 +1178,29 @@ function News({ session, isAdmin }) {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteArticleId && (
+          <ConfirmSheet
+            title="Delete this article?"
+            body="This will remove it permanently for everyone on PolyNet. This can't be undone."
+            confirmLabel="Delete Article"
+            danger
+            onConfirm={performDeleteArticle}
+            onCancel={() => setDeleteArticleId(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sharingArticle && (
+          <ShareSheet
+            article={sharingArticle}
+            onClose={() => setSharingArticle(null)}
+            onDownload={handleDownloadImage}
+          />
         )}
       </AnimatePresence>
 
