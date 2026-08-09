@@ -261,7 +261,7 @@ function ShareSheet({ url, onClose }) {
 
         <div onClick={copyLink} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
           <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="link" size={18} color="var(--app-accent)" />
+           <Icon name="copy" size={17} color="var(--app-accent)" />
           </div>
           <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>{copied ? 'Link copied!' : 'Copy Link'}</span>
         </div>
@@ -539,7 +539,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
         .from('feed_comments')
         .select('id, content, created_at, author_id, profiles(full_name, is_admin, admin_title)')
         .eq('post_id', postId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
       setCommentsByPost(prev => ({ ...prev, [postId]: data || [] }))
       setCommentCounts(prev => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }))
       setNewComment('')
@@ -840,18 +840,19 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                   <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={() => goToAuthor(post.author_id)} />
 
                   <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'nowrap' }}>
-                    <span
-                      onClick={() => goToAuthor(post.author_id)}
-                      title={name}
-                      style={{
-                        fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        flexShrink: 1, minWidth: '68px', maxWidth: '62%',
-                      }}
-                    >
-                      {name}
-                    </span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', flexShrink: 1, minWidth: '68px', maxWidth: '62%' }}>
+                      <span
+                        onClick={() => goToAuthor(post.author_id)}
+                        title={name}
+                        style={{
+                         fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
+                       }}
+                      >
+                        {name}
+                      </span>
                     {isAuthorAdmin && <VerifiedBadge size={12} />}
+                    </span>
                     {dept && (
                       <span
                         title={dept}
@@ -962,11 +963,11 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                     after the header, unchanged. */}
                 {post.content && (
                   hasImage ? (
-                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
+                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px', textAlign: 'left' }}>
                       <span>{post.content}</span>
                     </div>
                   ) : (
-                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800 }}>
+                     <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800, textAlign: 'left' }}>
                       <span>{post.content}</span>
                     </div>
                   )

@@ -199,7 +199,8 @@ function ContactSheet({ onClose }) {
           </div>
           <div>
             <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>WhatsApp</div>
-            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>0787 525 495</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>071 188 1821
+            </div>
           </div>
         </a>
 
