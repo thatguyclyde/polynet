@@ -43,7 +43,7 @@ const HEADER_GRADIENT = 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084F
 // International-format WhatsApp number (0787525495 → 263 787525495, no
 // leading 0) — used with the whatsapp:// scheme so this opens the actual
 // installed app rather than the wa.me website.
-const WHATSAPP_NUMBER = '263787525495'
+const WHATSAPP_NUMBER = '263711881821'
 const CONTACT_EMAIL = 'clydechiruka4@gmail.com'
 
 function platformInfo(id) {
