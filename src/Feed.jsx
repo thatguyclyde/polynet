@@ -5,6 +5,7 @@ import Icon from './Icon'
 import { FeedSkeleton } from './Skeleton'
 import PublicProfileCard from './PublicProfileCard'
 import { useTheme } from './ThemeContext'
+import { getDisplayName } from './displayName'
 
 const CATEGORY_STYLES = {
   school: { label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
@@ -19,9 +20,11 @@ const FILTERS = [
 
 const LIKE_RED = '#ED4956'
 const BRAND_PURPLE = '#7C3AED'
+const VERIFIED_BLUE = '#1D9BF0'
 const FUZZY_THRESHOLD = 0.6
 const COLLAPSE_THRESHOLD = 30 // must match FEED_COLLAPSE_THRESHOLD in App.jsx
 const HEADER_HEIGHT = 82 // px — height of the fixed title block below, used as paddingTop offset
+const COMMENT_PREVIEW_COUNT = 2
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -92,6 +95,23 @@ function Avatar({ url, name, size = 40, onClick }) {
         <span style={{ color: 'var(--app-accent)', fontWeight: 700, fontSize: size * 0.36 }}>{initials}</span>
       )}
     </div>
+  )
+}
+
+// Small blue check badge marking admin authors — same visual language used
+// in News.jsx and Chats.jsx, reused here for post headers and comments.
+function VerifiedBadge({ size = 13 }) {
+  return (
+    <span
+      title="Admin"
+      style={{
+        position: 'relative', width: size, height: size, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}
+    >
+      <Icon name="badgeCheck" size={size} color={VERIFIED_BLUE} fill={VERIFIED_BLUE} style={{ position: 'absolute', top: 0, left: 0 }} />
+      <Icon name="check" size={size * 0.46} color="#fff" strokeWidth={3.5} style={{ position: 'relative' }} />
+    </span>
   )
 }
 
@@ -288,6 +308,9 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const [commentsByPost, setCommentsByPost] = useState({})
   const [newComment, setNewComment] = useState('')
   const [commentLoading, setCommentLoading] = useState(false)
+  // Which posts currently have their FULL comment list expanded — comments
+  // default to showing just the first two, with a "Read more" toggle.
+  const [expandedComments, setExpandedComments] = useState(new Set())
 
   const [openMenuId, setOpenMenuId] = useState(null)
   const [savingImageId, setSavingImageId] = useState(null)
@@ -337,7 +360,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
       .from('feed_posts')
       .select(`
         id, content, post_type, created_at, author_id, image_url,
-        profiles(full_name, department, avatar_url),
+        profiles(full_name, department, avatar_url, is_admin, admin_title),
         likes:post_likes(count),
         comments:feed_comments(count)
       `)
@@ -492,11 +515,19 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     if (!commentsByPost[postId]) {
       const { data } = await supabase
         .from('feed_comments')
-        .select('id, content, created_at, author_id, profiles(full_name)')
+        .select('id, content, created_at, author_id, profiles(full_name, is_admin, admin_title)')
         .eq('post_id', postId)
         .order('created_at', { ascending: true })
       setCommentsByPost(prev => ({ ...prev, [postId]: data || [] }))
     }
+  }
+
+  function toggleExpandComments(postId) {
+    setExpandedComments(prev => {
+      const next = new Set(prev)
+      next.has(postId) ? next.delete(postId) : next.add(postId)
+      return next
+    })
   }
 
   async function submitComment(postId) {
@@ -506,7 +537,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     if (!error) {
       const { data } = await supabase
         .from('feed_comments')
-        .select('id, content, created_at, author_id, profiles(full_name)')
+        .select('id, content, created_at, author_id, profiles(full_name, is_admin, admin_title)')
         .eq('post_id', postId)
         .order('created_at', { ascending: true })
       setCommentsByPost(prev => ({ ...prev, [postId]: data || [] }))
@@ -607,7 +638,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
 
     const { data, error } = await supabase
       .from('skills')
-      .select('user_id, skill_name, profiles(full_name, department, avatar_url)')
+      .select('user_id, skill_name, profiles(full_name, department, avatar_url, is_admin, admin_title)')
       .limit(1000)
 
     if (error) {
@@ -635,7 +666,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
       if (!byUser.has(row.user_id)) {
         byUser.set(row.user_id, {
           userId: row.user_id,
-          name: row.profiles?.full_name || 'PolyNet Student',
+          name: getDisplayName(row.profiles),
           department: row.profiles?.department || '',
           avatar: row.profiles?.avatar_url || null,
           matchedSkill: row.skill_name,
@@ -785,11 +816,15 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
             </div>
           )}
           {filteredPosts.map(post => {
-            const name = post.profiles?.full_name || 'PolyNet Student'
+            const name = getDisplayName(post.profiles)
+            const isAuthorAdmin = !!post.profiles?.is_admin
             const dept = post.profiles?.department || ''
             const isSchoolRelated = post.post_type === 'school'
             const isLiked = likedIds.has(post.id)
             const comments = commentsByPost[post.id] || []
+            const isExpanded = expandedComments.has(post.id)
+            const visibleComments = isExpanded ? comments : comments.slice(0, COMMENT_PREVIEW_COUNT)
+            const hasMoreComments = comments.length > COMMENT_PREVIEW_COUNT
             const isOwnPost = post.author_id === session.user.id
             const isViewingThis = viewingPost?.id === post.id
             const hasImage = !!post.image_url
@@ -816,6 +851,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                     >
                       {name}
                     </span>
+                    {isAuthorAdmin && <VerifiedBadge size={12} />}
                     {dept && (
                       <span
                         title={dept}
@@ -888,18 +924,6 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                   </div>
                 </div>
 
-                {post.content && (
-                  hasImage ? (
-                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
-                      <span>{post.content}</span>
-                    </div>
-                  ) : (
-                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800 }}>
-                      <span>{post.content}</span>
-                    </div>
-                  )
-                )}
-
                 {post.image_url && (
                   <div style={{
                     position: 'relative',
@@ -932,6 +956,22 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                   </div>
                 )}
 
+                {/* Caption — for image posts this now sits BELOW the image
+                    (moved from above it); for text-only posts there's no
+                    image above it either way, so this still lands right
+                    after the header, unchanged. */}
+                {post.content && (
+                  hasImage ? (
+                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px' }}>
+                      <span>{post.content}</span>
+                    </div>
+                  ) : (
+                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800 }}>
+                      <span>{post.content}</span>
+                    </div>
+                  )
+                )}
+
                 <div style={{ display: 'flex', gap: '20px', padding: post.image_url ? '10px 16px 0' : '2px 16px 0' }}>
                   <LikeButton
                     isLiked={isLiked}
@@ -957,16 +997,31 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                       style={{ overflow: 'hidden' }}
                     >
                       <div style={{ padding: '10px 16px 14px' }}>
-                        {comments.map(c => (
-                          <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                            <Avatar name={c.profiles?.full_name || 'S'} size={26} onClick={() => goToAuthor(c.author_id)} />
-                            <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1 }}>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)' }}>{c.profiles?.full_name || 'PolyNet Student'}</div>
-                              <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px' }}>{c.content}</div>
+                        {visibleComments.map(c => {
+                          const commentName = getDisplayName(c.profiles)
+                          const isCommentAuthorAdmin = !!c.profiles?.is_admin
+                          return (
+                            <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                              <Avatar name={commentName} size={26} onClick={() => goToAuthor(c.author_id)} />
+                              <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1 }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  {commentName}
+                                  {isCommentAuthorAdmin && <VerifiedBadge size={11} />}
+                                </div>
+                                <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px' }}>{c.content}</div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                         {comments.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>No comments yet</p>}
+                        {hasMoreComments && (
+                          <div
+                            onClick={() => toggleExpandComments(post.id)}
+                            style={{ marginTop: '10px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}
+                          >
+                            {isExpanded ? 'Show less' : `Read more comments (${comments.length - COMMENT_PREVIEW_COUNT})`}
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                           <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitComment(post.id) }} placeholder="Write a comment..." style={{ flex: 1, padding: '10px 12px', borderRadius: '12px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--text-strong)', outline: 'none', fontSize: '13px' }} />
                           <button onClick={() => submitComment(post.id)} disabled={commentLoading || !newComment.trim()} style={{ padding: '10px 14px', borderRadius: '12px', border: 'none', background: newComment.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>

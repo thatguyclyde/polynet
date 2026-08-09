@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { NewsSkeleton } from './Skeleton'
 import { useTheme } from './ThemeContext'
+import { getDisplayName } from './displayName'
 
 const LIKE_ACCENT = 'var(--app-accent)'
 const DISLIKE_COLOR = '#EF4444'
@@ -198,7 +199,7 @@ function News({ session, isAdmin }) {
       .from('news_articles')
       .select(`
         id, title, body, image_url, created_at, author_id,
-        profiles(full_name),
+        profiles(full_name, is_admin, admin_title),
         likes:news_likes(count),
         dislikes:news_dislikes(count)
       `)
@@ -440,8 +441,8 @@ function News({ session, isAdmin }) {
       <div style={{
         padding: '18px 20px 16px',
         background: headerBg,
-        position: 'sticky', top: 0, zIndex: 30,
-      }}>
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
+       }}>
         <div style={{ textAlign: 'left' }}>
           <h1 style={{
             margin: 0,
@@ -674,7 +675,7 @@ function News({ session, isAdmin }) {
           const isLiked = likedIds.has(article.id)
           const isDisliked = dislikedIds.has(article.id)
           const isViewingThis = viewingArticle?.id === article.id
-          const posterName = article.profiles?.full_name || 'PolyNet Admin'
+          const posterName = getDisplayName(article.profiles, 'PolyNet Admin')
 
           // Purple edge = unread indicator: only for OTHER people's posts
           // newer than the read-state captured at the start of THIS visit,

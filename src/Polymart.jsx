@@ -3,10 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
+import { getDisplayName } from './displayName'
 
 const FILTER_ACTIVE_BG = '#FFFFFF'
 const FILTER_ACTIVE_TEXT = '#1A1A2E'
 const FILTER_PURPLE_EDGE = '#7C3AED'
+const VERIFIED_BLUE = '#1D9BF0'
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -59,7 +61,20 @@ const CATEGORIES = [
 function categoryIcon(id) {
   return CATEGORIES.find(c => c.id === id)?.icon || 'package'
 }
-
+function VerifiedBadge({ size = 13 }) {
+ return (
+   <span
+      title="Admin"
+      style={{
+        position: 'relative', width: size, height: size, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    }}
+    >
+      <Icon name="badgeCheck" size={size} color={VERIFIED_BLUE} fill={VERIFIED_BLUE} style={{ position: 'absolute', top: 0, left: 0 }} />
+      <Icon name="check" size={size * 0.46} color="#fff" strokeWidth={3.5} style={{ position: 'relative' }} />
+    </span>
+  )
+}
 function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   const { isDark } = useTheme()
   const [listings, setListings] = useState([])
@@ -94,7 +109,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     setLoading(true)
     const { data, error } = await supabase
       .from('marketplace_listings')
-      .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department, avatar_url)')
+      .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department, avatar_url, is_admin, admin_title)')
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch error:', error.message)
     if (data) setListings(data)
@@ -244,10 +259,13 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
               color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              {(l.profiles?.full_name || 'S').split(' ').map(n => n[0]).slice(0, 2).join('')}
+             {getDisplayName(l.profiles, 'S').split(' ').map(n => n[0]).slice(0, 2).join('')}
             </div>
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)' }}>{l.profiles?.full_name || 'PolyNet Student'}</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+             {getDisplayName(l.profiles)}
+                {l.profiles?.is_admin && <VerifiedBadge size={12} />}
+              </div>
               <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{l.profiles?.department} · {timeAgo(l.created_at)}</div>
             </div>
           </div>
@@ -266,7 +284,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   listingId: selectedListing.id,
   sellerId: selectedListing.seller_id,
   listingTitle: selectedListing.title,
-  sellerName: selectedListing.profiles?.full_name || 'PolyNet Student',
+  sellerName: getDisplayName(selectedListing.profiles),
   listingImage: selectedListing.image_url || null,
   sellerAvatar: selectedListing.profiles?.avatar_url || null,
 })}

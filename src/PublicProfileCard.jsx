@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
+import { getDisplayName } from './displayName'
 
 const SOCIAL_ICON_MAP = {
   instagram: 'instagram',
@@ -37,7 +38,7 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
       const [{ data: profileData, error: profileErr }, { data: skillData, error: skillErr }] = await Promise.all([
         supabase
           .from('profiles')
-          .select('full_name, department, year_of_study, bio, avatar_url, whatsapp_number, social_links')
+          .select('full_name, department, year_of_study, bio, avatar_url, whatsapp_number, social_links, is_admin, admin_title')
           .eq('id', userId)
           .maybeSingle(),
         supabase
@@ -59,7 +60,7 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
   if (!userId) return null
 
   const isOwnProfile = userId === session.user.id
-  const displayName = profile?.full_name || 'PolyNet Student'
+  const displayName = getDisplayName(profile)
   const initials = displayName.split(' ').map(n => n[0]).slice(0, 2).join('')
   const whatsappDigits = (profile?.whatsapp_number || '').replace(/[^0-9]/g, '')
   const socialLinks = profile?.social_links || []

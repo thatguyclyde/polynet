@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
 import { ProfileSkeleton } from './Skeleton'
+import { getDisplayName } from './displayName'
 
 const DEPARTMENTS = [
   'Applied Arts (Clothing Technology, Fashion & Textiles)',
@@ -37,6 +38,13 @@ const SOCIAL_PLATFORMS = [
 ]
 
 const VERIFIED_BLUE = '#1D9BF0'
+const HEADER_GRADIENT = 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)'
+
+// International-format WhatsApp number (0787525495 → 263 787525495, no
+// leading 0) — used with the whatsapp:// scheme so this opens the actual
+// installed app rather than the wa.me website.
+const WHATSAPP_NUMBER = '263787525495'
+const CONTACT_EMAIL = 'clydechiruka4@gmail.com'
 
 function platformInfo(id) {
   return SOCIAL_PLATFORMS.find(p => p.id === id) || SOCIAL_PLATFORMS[SOCIAL_PLATFORMS.length - 1]
@@ -44,6 +52,10 @@ function platformInfo(id) {
 
 function whatsappUrlFor(digits) {
   return `https://wa.me/${digits}`
+}
+
+function whatsappAppUrl(text) {
+  return `whatsapp://send?phone=${WHATSAPP_NUMBER}&text=${encodeURIComponent(text)}`
 }
 
 function compressImage(file, maxWidth = 500, quality = 0.75) {
@@ -148,6 +160,66 @@ function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onCancel }
   )
 }
 
+// Bottom sheet offering both contact routes — WhatsApp opens the real app
+// via the whatsapp:// scheme (not the web version), Email opens the
+// person's mail app. Two separate options rather than an automatic
+// fallback, since not everyone has WhatsApp installed.
+function ContactSheet({ onClose }) {
+  const message = 'Hi, I have a question about PolyNet.'
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 12px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 14px' }} />
+        <h3 style={{ margin: '10px 12px 14px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-strong)' }}>Contact PolyNet</h3>
+
+        <a
+          href={whatsappAppUrl(message)}
+          style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', textDecoration: 'none', borderRadius: '12px' }}
+        >
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(37,211,102,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="whatsapp" size={19} color="#25D366" />
+          </div>
+          <div>
+            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>WhatsApp</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>0787 525 495</div>
+          </div>
+        </a>
+
+        <a
+          href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('PolyNet Support')}`}
+          style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', textDecoration: 'none', borderRadius: '12px' }}
+        >
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="send" size={17} color="var(--app-accent)" />
+          </div>
+          <div>
+            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>Email</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>{CONTACT_EMAIL}</div>
+          </div>
+        </a>
+      </motion.div>
+    </div>
+  )
+}
+
 function Profile({ session, onBack }) {
   const { isDark, toggleTheme } = useTheme()
   const [editMode, setEditMode] = useState(false)
@@ -176,6 +248,7 @@ function Profile({ session, onBack }) {
   const [infoPage, setInfoPage] = useState(null)
   const [confirmModal, setConfirmModal] = useState(null)
   const [viewingAvatar, setViewingAvatar] = useState(false)
+  const [contactSheetOpen, setContactSheetOpen] = useState(false)
 
   // Admin-specific fields — profiles shared between students and admins,
   // so which fields apply depends on isAdmin.
@@ -295,11 +368,10 @@ function Profile({ session, onBack }) {
       newAvatarUrl = urlData.publicUrl
     }
 
-    // Admins and students save different secondary fields — year_of_study
-    // for students, admin_title for admins. Neither role touches the
-    // other's field, and is_admin itself isn't editable here.
+    // Admins and students save different identity/secondary fields —
+    // admins never touch full_name (their title stands in as their name
+    // everywhere), students never touch admin_title.
     const updatePayload = {
-      full_name: fullName.trim(),
       department,
       bio,
       avatar_url: newAvatarUrl,
@@ -309,6 +381,7 @@ function Profile({ session, onBack }) {
     if (isAdmin) {
       updatePayload.admin_title = adminTitle.trim()
     } else {
+      updatePayload.full_name = fullName.trim()
       updatePayload.year_of_study = year
     }
 
@@ -334,7 +407,7 @@ function Profile({ session, onBack }) {
   }
 
   function requestSave() {
-    if (!fullName.trim()) return setMessage('Full name is required')
+    if (!isAdmin && !fullName.trim()) return setMessage('Full name is required')
     if (isAdmin && !adminTitle.trim()) return setMessage('Title is required')
     setConfirmModal('save')
   }
@@ -348,14 +421,20 @@ function Profile({ session, onBack }) {
     s.toLowerCase().includes(skillSearch.toLowerCase()) &&
     !skills.find(ms => ms.skill_name.toLowerCase() === s.toLowerCase())
   )
-  const initials = fullName.split(' ').map(n => n[0]).slice(0, 2).join('') || 'S'
+  // The name shown everywhere on this screen — an admin's title stands in
+  // for their name, since they never set a full_name during onboarding.
+  const displayName = getDisplayName(
+    { full_name: fullName, is_admin: isAdmin, admin_title: adminTitle },
+    isAdmin ? 'PolyNet Admin' : 'Your Name'
+  )
+  const initials = displayName.split(' ').map(n => n[0]).slice(0, 2).join('') || 'S'
   const whatsappDigits = whatsapp.replace(/[^0-9]/g, '')
 
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-        <div style={{ padding: '18px 20px 12px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
-          <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-strong)' }}>My Profile</h1>
+        <div style={{ padding: '18px 20px 12px', background: HEADER_GRADIENT, position: 'sticky', top: 0, zIndex: 20 }}>
+          <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#fff' }}>My Profile</h1>
         </div>
         <ProfileSkeleton />
       </div>
@@ -365,7 +444,25 @@ function Profile({ session, onBack }) {
   if (infoPage === 'about') {
     return (
       <InfoPage title="About PolyNet" onBack={() => setInfoPage(null)}>
-        <p>PolyNet is a campus community app built for students at Harare Polytechnic.</p>
+        <p><strong>PolyNet</strong> connects every student's talent to the people who need it — starting at Harare Polytechnic.</p>
+
+        <p style={{ marginTop: '14px' }}>Talented students are often invisible to each other. Someone who can code, design, weld, or tutor has no easy way to be found by classmates who need exactly that skill — so collaborations, friendships, and small businesses that should happen, simply don't.</p>
+
+        <p style={{ marginTop: '14px' }}>PolyNet gives every student a profile built around their real skills and projects. From there, students can search for talent, post ideas to team up on, trade services in a peer marketplace, and stay in the loop through a shared campus feed.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>What you can do here</p>
+        <ul style={{ margin: '8px 0 0', paddingLeft: '18px' }}>
+          <li style={{ marginBottom: '6px' }}><strong>News Board</strong> — official updates from school authorities</li>
+          <li style={{ marginBottom: '6px' }}><strong>Student Profiles</strong> — your campus identity, built on real skills</li>
+          <li style={{ marginBottom: '6px' }}><strong>Skills Search</strong> — find any classmate by what they can do</li>
+          <li style={{ marginBottom: '6px' }}><strong>PolyMart</strong> — a campus marketplace to trade skills and services</li>
+          <li><strong>Community Feed</strong> — shoutouts, events, and opportunities in one place</li>
+        </ul>
+
+        <p style={{ marginTop: '18px' }}>PolyNet is, and always will be, free for students to join and use. The goal is to make every student visible, connectable, and valuable — first to each other, and eventually to employers and institutions across Zimbabwe.</p>
+
+        <p style={{ marginTop: '18px', color: 'var(--text-muted)' }}>Founded by Clyde Takunda Chiruka.</p>
+
         <p style={{ marginTop: '14px', color: 'var(--text-muted)' }}>Version 1.0.0</p>
       </InfoPage>
     )
@@ -383,12 +480,13 @@ function Profile({ session, onBack }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', paddingBottom: editMode ? '110px' : '24px' }}>
 
-      {/* ═══ STICKY HEADER — close button only shows outside edit mode,
-          since Cancel already covers "leave this screen" while editing. ═══ */}
+      {/* ═══ STICKY HEADER — purple gradient now runs all the way through
+          the header itself, so the "My Profile" label sits inside the
+          gradient rather than on a plain bar above it. Back is now a real
+          labeled pill button instead of a bare chevron icon. ═══ */}
       <div style={{
-        padding: '16px 20px 12px',
-        background: 'var(--card-bg)',
-        borderBottom: '1px solid var(--app-border)',
+        padding: '16px 20px 14px',
+        background: HEADER_GRADIENT,
         position: 'sticky',
         top: 0,
         zIndex: 20,
@@ -396,7 +494,7 @@ function Profile({ session, onBack }) {
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
-        <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-strong)' }}>
+        <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#fff' }}>
           {editMode ? 'Edit Profile' : 'My Profile'}
         </h1>
 
@@ -409,7 +507,7 @@ function Profile({ session, onBack }) {
                 setAvatarPreview(null)
                 fetchProfile()
               }}
-              style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: '4px' }}
+              style={{ color: 'rgba(255,255,255,0.85)', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: '4px' }}
             >
               Cancel
             </span>
@@ -418,21 +516,21 @@ function Profile({ session, onBack }) {
           {!editMode && onBack && (
             <button
               onClick={onBack}
-              aria-label="Close Profile"
+              aria-label="Back"
               style={{
                 cursor: 'pointer',
-                width: '36px',
-                height: '36px',
-                borderRadius: '12px',
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '8px 16px',
+                borderRadius: '999px',
                 border: 'none',
-                background: 'var(--app-border-soft)',
-                color: 'var(--text-strong)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                background: 'rgba(255,255,255,0.18)',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: '13px',
               }}
             >
-              <Icon name="chevronRight" size={20} color="var(--text-strong)" />
+              <Icon name="arrowLeft" size={14} color="#fff" />
+              Back
             </button>
           )}
         </div>
@@ -481,35 +579,19 @@ function Profile({ session, onBack }) {
 
             {!editMode ? (
               <>
-                {/* Minimal read-only display: name, then role-specific
-                    context line, then bio. Admins get a verified badge +
-                    their title; students get their department only. */}
+                {/* Minimal read-only display: name (an admin's title stands
+                    in as their name here), then department. */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '10px' }}>
                   <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>
-                    {fullName || 'Your Name'}
+                    {displayName}
                   </div>
                   {isAdmin && <VerifiedBadge size={15} />}
                 </div>
 
-                {isAdmin ? (
-                  <>
-                    {adminTitle && (
-                      <div style={{ fontSize: '13px', color: 'var(--app-accent)', fontWeight: 700, marginTop: '4px' }}>
-                        {adminTitle}
-                      </div>
-                    )}
-                    {department && (
-                      <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        {department}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  department && (
-                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      {department}
-                    </div>
-                  )
+                {department && (
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {department}
+                  </div>
                 )}
 
                 {bio && (
@@ -519,21 +601,25 @@ function Profile({ session, onBack }) {
                 <button
                   onClick={() => setEditMode(true)}
                   style={{
-                    width: '65%', margin: '18px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
-                    padding: '12px', borderRadius: '14px', border: 'none',
-                    background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    margin: '18px auto 0', padding: '9px 18px', borderRadius: '999px', border: 'none',
+                    background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
                     boxShadow: 'var(--shadow-accent)',
                   }}
                 >
-                  <Icon name="edit" size={14} />
+                  <Icon name="edit" size={13} />
                   Edit Profile
                 </button>
               </>
             ) : (
-              <div style={{ marginTop: '10px', textAlign: 'left' }}>
-                <label style={miniLabel}>Full Name</label>
-                <input value={fullName} onChange={e => setFullName(e.target.value)} style={compactInput} />
-              </div>
+              // Students edit their full name here; admins skip this
+              // entirely since their Title field (below) is their name.
+              !isAdmin && (
+                <div style={{ marginTop: '10px', textAlign: 'left' }}>
+                  <label style={miniLabel}>Full Name</label>
+                  <input value={fullName} onChange={e => setFullName(e.target.value)} style={compactInput} />
+                </div>
+              )
             )}
           </div>
         </div>
@@ -683,7 +769,8 @@ function Profile({ session, onBack }) {
         <div style={{ background: 'var(--card-bg)', borderRadius: '18px', border: '1px solid var(--app-border)', padding: '4px 14px' }}>
           <SettingsRow icon="moon" label="Dark Mode" trailing={<Toggle checked={isDark} onChange={toggleTheme} />} />
           <SettingsRow icon="info" label="About PolyNet" onClick={() => setInfoPage('about')} />
-          <SettingsRow icon="shield" label="Privacy Policy" onClick={() => setInfoPage('privacy')} isLast />
+          <SettingsRow icon="shield" label="Privacy Policy" onClick={() => setInfoPage('privacy')} />
+          <SettingsRow icon="phone" label="Contact PolyNet" onClick={() => setContactSheetOpen(true)} isLast />
         </div>
 
         <button
@@ -745,7 +832,7 @@ function Profile({ session, onBack }) {
                 layoutId="profile-avatar-image"
                 transition={{ type: 'spring', stiffness: 260, damping: 28 }}
                 src={avatarUrl}
-                alt={fullName}
+                alt={displayName}
                 onClick={(e) => e.stopPropagation()}
                 style={{ maxWidth: '88%', maxHeight: '78vh', borderRadius: '24px', objectFit: 'contain' }}
               />
@@ -772,6 +859,13 @@ function Profile({ session, onBack }) {
               <Icon name="x" size={19} color="#fff" />
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ CONTACT SHEET ═══ */}
+      <AnimatePresence>
+        {contactSheetOpen && (
+          <ContactSheet onClose={() => setContactSheetOpen(false)} />
         )}
       </AnimatePresence>
 
