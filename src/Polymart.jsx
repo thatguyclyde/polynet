@@ -61,20 +61,234 @@ const CATEGORIES = [
 function categoryIcon(id) {
   return CATEGORIES.find(c => c.id === id)?.icon || 'package'
 }
+
 function VerifiedBadge({ size = 13 }) {
- return (
-   <span
+  return (
+    <span
       title="Admin"
       style={{
         position: 'relative', width: size, height: size, display: 'inline-flex',
         alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    }}
+      }}
     >
       <Icon name="badgeCheck" size={size} color={VERIFIED_BLUE} fill={VERIFIED_BLUE} style={{ position: 'absolute', top: 0, left: 0 }} />
       <Icon name="check" size={size * 0.46} color="#fff" strokeWidth={3.5} style={{ position: 'relative' }} />
     </span>
   )
 }
+
+// Same bottom-sheet confirmation pattern as Feed.jsx / News.jsx, reused
+// here for "mark as sold".
+function ConfirmSheet({ title, body, confirmLabel, danger, onConfirm, onCancel }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 18px' }} />
+        <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'center' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>{body}</p>
+        <button
+          onClick={onConfirm}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+            background: danger ? '#EF4444' : FILTER_PURPLE_EDGE, color: '#fff',
+            fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', marginBottom: '10px',
+          }}
+        >
+          {confirmLabel}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px',
+            border: '1px solid var(--app-border-soft)', background: 'transparent',
+            color: 'var(--text-strong)', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </motion.div>
+    </div>
+  )
+}
+
+// Floats in the middle of the screen, covering most of it — the person's
+// own active listings only (name/price, no seller card, no Message
+// button, since this is their own stuff). "Sold" marks sold: true, which
+// hides it from PolyMart everywhere without deleting the row.
+function MyListingsSheet({ session, onClose, onListingRemoved }) {
+  const [listings, setListings] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [confirmSoldId, setConfirmSoldId] = useState(null)
+  const [removingId, setRemovingId] = useState(null)
+
+  useEffect(() => {
+    fetchMyListings()
+  }, [])
+
+  async function fetchMyListings() {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('marketplace_listings')
+      .select('id, title, price, category, image_url, created_at')
+      .eq('seller_id', session.user.id)
+      .eq('sold', false)
+      .order('created_at', { ascending: false })
+    if (error) console.error('Error fetching my listings:', error.message)
+    setListings(data || [])
+    setLoading(false)
+  }
+
+  async function confirmMarkSold() {
+    const listingId = confirmSoldId
+    setConfirmSoldId(null)
+    if (!listingId) return
+    setRemovingId(listingId)
+    const { error } = await supabase
+      .from('marketplace_listings')
+      .update({ sold: true })
+      .eq('id', listingId)
+    if (error) {
+      console.error('Error marking listing sold:', error.message)
+      alert('Could not update this listing. Please try again.')
+    } else {
+      setListings(prev => prev.filter(l => l.id !== listingId))
+      onListingRemoved?.(listingId)
+    }
+    setRemovingId(null)
+  }
+
+  return (
+    <>
+      <motion.div
+        key="my-listings-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 250 }}
+      />
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 260,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '30px 20px', pointerEvents: 'none',
+      }}>
+        <motion.div
+          key="my-listings-panel"
+          onClick={e => e.stopPropagation()}
+          initial={{ opacity: 0, scale: 0.94, y: 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.94, y: 16 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+          style={{
+            width: '100%', maxWidth: '400px', maxHeight: '84vh',
+            background: 'var(--card-bg)', borderRadius: '24px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+            <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', flex: 1 }}>My Listings</h2>
+            <div onClick={onClose} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+              <Icon name="x" size={20} />
+            </div>
+          </div>
+
+          <div style={{ overflowY: 'auto', flex: 1, padding: '16px 16px 20px' }}>
+            {loading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '50px 0' }}>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                  ))}
+                </div>
+              </div>
+            ) : listings.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+                <Icon name="shoppingBag" size={32} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '10px' }} />
+                <p style={{ color: 'var(--text-muted)', fontSize: '13.5px' }}>You haven't listed anything yet.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                {listings.map(l => (
+                  <div key={l.id}>
+                    <div style={{
+                      background: 'var(--page-bg)', borderRadius: '16px', overflow: 'hidden',
+                      border: '1px solid var(--app-border)',
+                    }}>
+                      {l.image_url ? (
+                        <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '100px', objectFit: 'cover', display: 'block' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Icon name={categoryIcon(l.category)} size={24} color="var(--app-accent)" />
+                        </div>
+                      )}
+                      <div style={{ padding: '9px' }}>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--app-accent)' }}>
+                          ${Number(l.price).toFixed(2)}
+                        </div>
+                        <div style={{
+                          fontSize: '12px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {l.title}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setConfirmSoldId(l.id)}
+                      disabled={removingId === l.id}
+                      style={{
+                        width: '100%', marginTop: '6px', padding: '8px', borderRadius: '10px',
+                        border: 'none', background: 'var(--danger)', color: '#fff',
+                        fontWeight: 700, fontSize: '12px', cursor: 'pointer',
+                      }}
+                    >
+                      {removingId === l.id ? 'Marking...' : 'Sold'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </div>
+
+      <AnimatePresence>
+        {confirmSoldId && (
+          <ConfirmSheet
+            title="Mark as sold?"
+            body="This removes the listing from PolyMart for everyone. It won't be visible anymore."
+            confirmLabel="Mark as Sold"
+            danger
+            onConfirm={confirmMarkSold}
+            onCancel={() => setConfirmSoldId(null)}
+          />
+        )}
+      </AnimatePresence>
+    </>
+  )
+}
+
 function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   const { isDark } = useTheme()
   const [listings, setListings] = useState([])
@@ -83,6 +297,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   const [search, setSearch] = useState('')
   const [showComposer, setShowComposer] = useState(false)
   const [selectedListing, setSelectedListing] = useState(null)
+  const [showMyListings, setShowMyListings] = useState(false)
 
   const [title, setTitle] = useState('')
   const [price, setPrice] = useState('')
@@ -110,6 +325,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     const { data, error } = await supabase
       .from('marketplace_listings')
       .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department, avatar_url, is_admin, admin_title)')
+      .eq('sold', false)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch error:', error.message)
     if (data) setListings(data)
@@ -163,6 +379,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       price: parseFloat(price),
       category,
       image_url: imageUrl,
+      sold: false,
     })
 
     if (error) {
@@ -191,6 +408,11 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     setImageFile(null)
     setImagePreview(null)
     setErrorMsg('')
+  }
+
+  function handleListingSold(listingId) {
+    setListings(prev => prev.filter(l => l.id !== listingId))
+    if (selectedListing?.id === listingId) setSelectedListing(null)
   }
 
   const filtered = listings.filter(l => {
@@ -253,25 +475,27 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
           </div>
           <h2 style={{ margin: '0 0 12px', fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>{l.title}</h2>
 
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '18px' }}>
+          {/* Seller row — name/department on the left, not center */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '18px', textAlign: 'left' }}>
             <div style={{
               width: '36px', height: '36px', borderRadius: '10px', background: 'var(--app-accent-soft)',
               color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-             {getDisplayName(l.profiles, 'S').split(' ').map(n => n[0]).slice(0, 2).join('')}
+              {getDisplayName(l.profiles, 'S').split(' ').map(n => n[0]).slice(0, 2).join('')}
             </div>
             <div>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-             {getDisplayName(l.profiles)}
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {getDisplayName(l.profiles)}
                 {l.profiles?.is_admin && <VerifiedBadge size={12} />}
               </div>
               <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{l.profiles?.department} · {timeAgo(l.created_at)}</div>
             </div>
           </div>
 
+          {/* Description — on the left, not center */}
           {l.description && (
-            <div style={{ marginBottom: '20px' }}>
+            <div style={{ marginBottom: '20px', textAlign: 'left' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: '6px' }}>
                 DESCRIPTION
               </div>
@@ -305,7 +529,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-<div style={{
+      <div style={{
         padding: '18px 20px 14px',
         background: headerBg,
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
@@ -496,24 +720,50 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
         )}
       </AnimatePresence>
 
+      {/* My Listings — floats in the middle of the screen */}
+      <AnimatePresence>
+        {showMyListings && (
+          <MyListingsSheet
+            session={session}
+            onClose={() => setShowMyListings(false)}
+            onListingRemoved={handleListingSold}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Listings area — slightly darker background in light mode so cards
           stand out clearly from the page behind them. paddingTop accounts
           for the now-fixed header above it. */}
       <div style={{ background: listingsAreaBg, minHeight: '40vh', paddingTop: '78px' }}>
 
         <div style={{ padding: '12px 20px 4px' }}>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search PolyMart..."
-            style={{
-              width: '100%', padding: '11px 14px', borderRadius: '12px',
-              border: '1.5px solid var(--app-border)', background: 'var(--input-bg)',
-              fontSize: '13.5px', outline: 'none', boxSizing: 'border-box', marginBottom: '12px', color: 'var(--text-strong)',
-            }}
-          />
+          {/* Search bar (65%) + My Listings button (remaining 35%) */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search PolyMart..."
+              style={{
+                flex: '0 0 65%', width: '65%', padding: '11px 14px', borderRadius: '12px',
+                border: '1.5px solid var(--app-border)', background: 'var(--input-bg)',
+                fontSize: '13.5px', outline: 'none', boxSizing: 'border-box', color: 'var(--text-strong)',
+              }}
+            />
+            <button
+              onClick={() => setShowMyListings(true)}
+              style={{
+                flex: 1, padding: '0 8px', borderRadius: '12px', border: 'none',
+                background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '11.5px',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                boxShadow: 'var(--shadow-accent)',
+              }}
+            >
+              <Icon name="package" size={13} color="#fff" />
+              My Listings
+            </button>
+          </div>
 
-          {/* Category filter chips — now scrolls away with the page */}
+          {/* Category filter chips — scrolls away with the page */}
           <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px', marginBottom: '4px' }}>
             {CATEGORIES.map(cat => {
               const isActive = activeCat === cat.id

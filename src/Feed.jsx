@@ -34,13 +34,6 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-function middleTruncate(str, maxChars = 24) {
-  if (!str || str.length <= maxChars) return str
-  const keepStart = Math.ceil((maxChars - 1) * 0.62)
-  const keepEnd = Math.floor((maxChars - 1) * 0.38)
-  return `${str.slice(0, keepStart)}…${str.slice(str.length - keepEnd)}`
-}
-
 function compressImage(file, maxWidth = 1080, quality = 0.7) {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -112,6 +105,17 @@ function VerifiedBadge({ size = 13 }) {
       <Icon name="badgeCheck" size={size} color={VERIFIED_BLUE} fill={VERIFIED_BLUE} style={{ position: 'absolute', top: 0, left: 0 }} />
       <Icon name="check" size={size * 0.46} color="#fff" strokeWidth={3.5} style={{ position: 'relative' }} />
     </span>
+  )
+}
+
+// Drawn directly instead of going through Icon.jsx — its icon-name mapping
+// wasn't rendering "copy" reliably, so this sidesteps that entirely.
+function CopyIcon({ size = 17, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
   )
 }
 
@@ -261,7 +265,7 @@ function ShareSheet({ url, onClose }) {
 
         <div onClick={copyLink} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
           <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-           <Icon name="copy" size={17} color="var(--app-accent)" />
+            <CopyIcon size={17} color="var(--app-accent)" />
           </div>
           <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>{copied ? 'Link copied!' : 'Copy Link'}</span>
         </div>
@@ -309,7 +313,8 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const [newComment, setNewComment] = useState('')
   const [commentLoading, setCommentLoading] = useState(false)
   // Which posts currently have their FULL comment list expanded — comments
-  // default to showing just the first two, with a "Read more" toggle.
+  // default to showing just the first two (latest, since queries are
+  // newest-first), with a "Read more" toggle.
   const [expandedComments, setExpandedComments] = useState(new Set())
 
   const [openMenuId, setOpenMenuId] = useState(null)
@@ -517,7 +522,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
         .from('feed_comments')
         .select('id, content, created_at, author_id, profiles(full_name, is_admin, admin_title)')
         .eq('post_id', postId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
       setCommentsByPost(prev => ({ ...prev, [postId]: data || [] }))
     }
   }
@@ -829,6 +834,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
             const isViewingThis = viewingPost?.id === post.id
             const hasImage = !!post.image_url
             const isImageLoaded = loadedImageIds.has(post.id)
+            const menuOpenForThisPost = openMenuId === post.id && !isViewingThis
 
             return (
               <motion.div key={post.id} layout="position" style={{ borderBottom: `8px solid ${postDivider}` }}>
@@ -837,37 +843,40 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                   padding: '12px 16px 10px', position: 'relative',
                   borderBottom: '1px solid var(--app-border-soft)',
                 }}>
-                  <Avatar url={post.profiles?.avatar_url} name={name} size={36} onClick={() => goToAuthor(post.author_id)} />
+                  <Avatar url={post.profiles?.avatar_url} name={name} size={40} onClick={() => goToAuthor(post.author_id)} />
 
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'nowrap' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', flexShrink: 1, minWidth: '68px', maxWidth: '62%' }}>
+                  {/* Two-line header block: name + badge + school tag on
+                      top, department underneath — both left-aligned next
+                      to the avatar rather than squeezed into one row. */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
                       <span
                         onClick={() => goToAuthor(post.author_id)}
                         title={name}
                         style={{
-                         fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
-                       }}
+                          fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          minWidth: 0, maxWidth: '75%',
+                        }}
                       >
                         {name}
                       </span>
-                    {isAuthorAdmin && <VerifiedBadge size={12} />}
-                    </span>
+                      {isAuthorAdmin && <VerifiedBadge size={12} />}
+                      {isSchoolRelated && (
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', marginLeft: '2px' }} title="School related">
+                          <Icon name="school" size={13} color="var(--success)" fill="none" />
+                        </div>
+                      )}
+                    </div>
                     {dept && (
-                      <span
+                      <div
                         title={dept}
                         style={{
-                          fontSize: '10px', color: 'var(--text-muted)',
-                          whiteSpace: 'nowrap', overflow: 'hidden',
-                          flexShrink: 1, minWidth: 0,
+                          fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}
                       >
-                        {middleTruncate(dept, 24)}
-                      </span>
-                    )}
-                    {isSchoolRelated && (
-                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }} title="School related">
-                        <Icon name="school" size={14} color="var(--success)" fill="none" />
+                        {dept}
                       </div>
                     )}
                   </div>
@@ -881,45 +890,55 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                       >
                         <Icon name="ellipsis-vertical" size={18} />
                       </div>
-                      {openMenuId === post.id && !isViewingThis && (
-                        <div style={{
-                          position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                          background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
-                          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '160px', overflow: 'hidden'
-                        }}>
-                          {isOwnPost && (
-                            <div
-                              onClick={() => { setOpenMenuId(null); setDeletePostId(post.id) }}
-                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                            >
-                              <Icon name="trash-2" size={14} />
-                              Delete
-                            </div>
-                          )}
+                      {menuOpenForThisPost && (
+                        <>
+                          {/* Invisible tap-to-close backdrop — sits just
+                              below the dropdown's z-index, above everything
+                              else, so tapping anywhere outside the menu
+                              closes it. */}
                           <div
-                            onClick={() => handleSaveImage(post)}
-                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                          >
-                            <Icon name="download" size={14} />
-                            {savingImageId === post.id ? 'Saving...' : 'Save Image'}
-                          </div>
-                          {!isOwnPost && (
+                            onClick={() => setOpenMenuId(null)}
+                            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                          />
+                          <div style={{
+                            position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                            background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '160px', overflow: 'hidden'
+                          }}>
+                            {isOwnPost && (
+                              <div
+                                onClick={() => { setOpenMenuId(null); setDeletePostId(post.id) }}
+                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                              >
+                                <Icon name="trash-2" size={14} />
+                                Delete
+                              </div>
+                            )}
                             <div
-                              onClick={() => reportPost(post.id)}
-                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                              onClick={() => handleSaveImage(post)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                             >
-                              <Icon name="flag" size={14} />
-                              Report
+                              <Icon name="download" size={14} />
+                              {savingImageId === post.id ? 'Saving...' : 'Save Image'}
                             </div>
-                          )}
-                          <div
-                            onClick={() => openSharePost(post)}
-                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
-                          >
-                            <Icon name="share-2" size={14} />
-                            Share
+                            {!isOwnPost && (
+                              <div
+                                onClick={() => reportPost(post.id)}
+                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                              >
+                                <Icon name="flag" size={14} />
+                                Report
+                              </div>
+                            )}
+                            <div
+                              onClick={() => openSharePost(post)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                            >
+                              <Icon name="share-2" size={14} />
+                              Share
+                            </div>
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -957,17 +976,14 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                   </div>
                 )}
 
-                {/* Caption — for image posts this now sits BELOW the image
-                    (moved from above it); for text-only posts there's no
-                    image above it either way, so this still lands right
-                    after the header, unchanged. */}
+                {/* Caption — sits below the image (not above it) */}
                 {post.content && (
                   hasImage ? (
                     <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px', textAlign: 'left' }}>
                       <span>{post.content}</span>
                     </div>
                   ) : (
-                     <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800, textAlign: 'left' }}>
+                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800, textAlign: 'left' }}>
                       <span>{post.content}</span>
                     </div>
                   )
@@ -1004,12 +1020,12 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                           return (
                             <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                               <Avatar name={commentName} size={26} onClick={() => goToAuthor(c.author_id)} />
-                              <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1 }}>
-                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1, textAlign: 'left' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px', textAlign: 'left' }}>
                                   {commentName}
                                   {isCommentAuthorAdmin && <VerifiedBadge size={11} />}
                                 </div>
-                                <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px' }}>{c.content}</div>
+                                <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px', textAlign: 'left' }}>{c.content}</div>
                               </div>
                             </div>
                           )
@@ -1353,51 +1369,66 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
 
                 <AnimatePresence>
                   {openMenuId === viewingPost.id && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9, y: -6 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.9, y: -6 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                      style={{
-                        position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 310,
-                        background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
-                        boxShadow: '0 8px 28px rgba(0,0,0,0.35)', minWidth: '160px', overflow: 'hidden',
-                        transformOrigin: 'top right',
-                      }}
-                    >
-                      {viewingPost.author_id === session.user.id && (
-                        <div
-                          onClick={() => { setOpenMenuId(null); setDeletePostId(viewingPost.id) }}
-                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                        >
-                          <Icon name="trash-2" size={14} />
-                          Delete
-                        </div>
-                      )}
-                      <div
-                        onClick={() => handleSaveImage(viewingPost)}
-                        style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                    <>
+                      {/* Same tap-outside-to-close backdrop, sitting just
+                          below this dropdown's z-index (310), above the
+                          viewer's own background (300) — so a stray tap
+                          closes only the menu, not the whole viewer. */}
+                      <motion.div
+                        key="viewer-menu-backdrop"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.1 }}
+                        onClick={(e) => { e.stopPropagation(); setOpenMenuId(null) }}
+                        style={{ position: 'fixed', inset: 0, zIndex: 305 }}
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                        style={{
+                          position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 310,
+                          background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                          boxShadow: '0 8px 28px rgba(0,0,0,0.35)', minWidth: '160px', overflow: 'hidden',
+                          transformOrigin: 'top right',
+                        }}
                       >
-                        <Icon name="download" size={14} />
-                        {savingImageId === viewingPost.id ? 'Saving...' : 'Save Image'}
-                      </div>
-                      {viewingPost.author_id !== session.user.id && (
+                        {viewingPost.author_id === session.user.id && (
+                          <div
+                            onClick={() => { setOpenMenuId(null); setDeletePostId(viewingPost.id) }}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="trash-2" size={14} />
+                            Delete
+                          </div>
+                        )}
                         <div
-                          onClick={() => reportPost(viewingPost.id)}
-                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          onClick={() => handleSaveImage(viewingPost)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                         >
-                          <Icon name="flag" size={14} />
-                          Report
+                          <Icon name="download" size={14} />
+                          {savingImageId === viewingPost.id ? 'Saving...' : 'Save Image'}
                         </div>
-                      )}
-                      <div
-                        onClick={() => openSharePost(viewingPost)}
-                        style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
-                      >
-                        <Icon name="share-2" size={14} />
-                        Share
-                      </div>
-                    </motion.div>
+                        {viewingPost.author_id !== session.user.id && (
+                          <div
+                            onClick={() => reportPost(viewingPost.id)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="flag" size={14} />
+                            Report
+                          </div>
+                        )}
+                        <div
+                          onClick={() => openSharePost(viewingPost)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                        >
+                          <Icon name="share-2" size={14} />
+                          Share
+                        </div>
+                      </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
