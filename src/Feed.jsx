@@ -25,8 +25,9 @@ const FUZZY_THRESHOLD = 0.6
 const COLLAPSE_THRESHOLD = 30 // must match FEED_COLLAPSE_THRESHOLD in App.jsx
 const HEADER_HEIGHT_FALLBACK = 82 // used only until the real header height is measured
 const COMMENT_PREVIEW_COUNT = 2
-const PULL_THRESHOLD = 64 // px of pull needed to trigger a refresh
-const PULL_MAX = 90 // px cap on the visual stretch, so it can't be dragged off-screen
+const PULL_THRESHOLD = 64 // px of pull needed to reveal the Refresh button
+const PULL_MAX = 90 // px cap on the visual stretch while actively dragging
+const REVEAL_HEIGHT = 54 // px the pull area rests at once pinned open with the button
 
 const REPORT_REASONS = [
   'Cyberbullying or harassment',
@@ -127,6 +128,18 @@ function CopyIcon({ size = 17, color = 'currentColor' }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+// Same reasoning as CopyIcon — drawn inline so the Refresh button doesn't
+// depend on an unverified Icon.jsx name.
+function RefreshIcon({ size = 13, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.36-3.36L23 10M1 14l5.13 4.36A9 9 0 0 0 20.49 15" />
     </svg>
   )
 }
@@ -295,7 +308,8 @@ function ShareSheet({ url, onClose }) {
   )
 }
 
-// Reason picker for reporting a post — replaces the old plain alert().
+// Reason picker for reporting a post — always available regardless of
+// whether the post belongs to the person viewing it.
 function ReportReasonsSheet({ onSelect, onClose }) {
   return (
     <div
@@ -432,12 +446,6 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const isCollapsed = scrollY > COLLAPSE_THRESHOLD
 
   // ── Dynamic header height ──────────────────────────────────────────
-  // Measures the fixed title block's REAL rendered height via
-  // ResizeObserver, instead of a hardcoded constant. This is what fixes
-  // the "header sometimes eats into the filter row" issue — that gap was
-  // caused by the Baloo 2 web font swapping in after initial paint,
-  // changing the header's true height slightly after a fixed padding
-  // value had already been applied.
   const headerRef = useRef(null)
   const [headerHeight, setHeaderHeight] = useState(HEADER_HEIGHT_FALLBACK)
 
@@ -451,23 +459,27 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     return () => ro.disconnect()
   }, [])
 
-  // ── Elastic pull-to-refresh ─────────────────────────────────────────
-  // Attached as real DOM listeners (not React's onTouchMove, which is
-  // passive by default and can't reliably preventDefault) directly to the
-  // content wrapper below the header. Only takes over the gesture once
-  // already scrolled to the very top and pulling further down — native
-  // scrolling is left completely alone everywhere else.
+  // ── Elastic pull, gated strictly to the true top of the feed ────────
+  // Pulling only ever starts when scrollY is genuinely 0 — anywhere else
+  // (including while merely scrolling back upward mid-list), this bails
+  // immediately at touchstart and native scrolling is left completely
+  // untouched. Pulling past the threshold no longer auto-refreshes; it
+  // pins the stretch open at a resting height and reveals a Refresh
+  // button, which the person has to actually tap.
   const [pullDistance, setPullDistance] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [showRefreshButton, setShowRefreshButton] = useState(false)
   const pullAreaRef = useRef(null)
   const touchStartY = useRef(null)
   const isPulling = useRef(false)
   const pullDistanceRef = useRef(0)
   const scrollYRef = useRef(scrollY)
   const refreshingRef = useRef(false)
+  const showRefreshButtonRef = useRef(false)
 
   useEffect(() => { scrollYRef.current = scrollY }, [scrollY])
   useEffect(() => { refreshingRef.current = refreshing }, [refreshing])
+  useEffect(() => { showRefreshButtonRef.current = showRefreshButton }, [showRefreshButton])
 
   function updatePullDistance(v) {
     pullDistanceRef.current = v
@@ -479,7 +491,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     if (!el) return
 
     function onTouchStart(e) {
-      if (scrollYRef.current > 0 || refreshingRef.current) {
+      if (scrollYRef.current > 0 || refreshingRef.current || showRefreshButtonRef.current) {
         isPulling.current = false
         return
       }
@@ -501,18 +513,17 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
       updatePullDistance(Math.min(PULL_MAX, delta * 0.45))
     }
 
-    async function onTouchEnd() {
+    function onTouchEnd() {
       if (!isPulling.current) return
       isPulling.current = false
       touchStartY.current = null
       const pulled = pullDistanceRef.current
       if (pulled >= PULL_THRESHOLD) {
-        setRefreshing(true)
-        updatePullDistance(44) // settle at a resting height while the spinner shows
-        await fetchPosts(false)
-        setRefreshing(false)
+        updatePullDistance(REVEAL_HEIGHT)
+        setShowRefreshButton(true)
+      } else {
+        updatePullDistance(0)
       }
-      updatePullDistance(0)
     }
 
     el.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -526,6 +537,15 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
       el.removeEventListener('touchcancel', onTouchEnd)
     }
   }, [])
+
+  async function handleManualRefresh() {
+    setShowRefreshButton(false)
+    setRefreshing(true)
+    updatePullDistance(44)
+    await fetchPosts(true) // true → shows the full loading state while it reloads
+    setRefreshing(false)
+    updatePullDistance(0)
+  }
 
   useEffect(() => {
     fetchPosts()
@@ -796,9 +816,8 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   }
 
   function submitReport(reason) {
-    // No reports table wired up yet — this just acknowledges the report
-    // for now. Hook this up to a real table later if you want reasons
-    // actually logged and reviewable somewhere.
+    // No reports table wired up in this file yet — this just acknowledges
+    // the report for now.
     setReportPostId(null)
     setReportedNotice(true)
   }
@@ -906,10 +925,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', position: 'relative' }}>
 
       {/* TITLE — genuinely position:fixed. Ref'd + observed for its real
-          rendered height, which the content below matches exactly (see
-          headerHeight state) — this is what stops the filter row from
-          ever getting clipped by the header, regardless of web-font
-          load timing. */}
+          rendered height, which the content below matches exactly. */}
       <div
         ref={headerRef}
         style={{
@@ -960,32 +976,54 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
       </AnimatePresence>
 
       {/* PULL AREA — real touch listeners attached here (see the effect
-          above). Everything inside stretches down elastically while
-          pulling, and snaps back once released — refreshing if pulled
-          past the threshold. */}
+          above). Only ever activates at the true top of the list. */}
       <div ref={pullAreaRef} style={{ position: 'relative' }}>
-        {/* Pull indicator — sits just under the fixed header, grows as
-            pullDistance grows, shows a spinner once actually refreshing. */}
+        {/* Pull indicator — dots while actively dragging, a Refresh
+            button once pinned open past the threshold, dots again while
+            the manual refresh is actually running. */}
         <div style={{
           position: 'absolute', top: `${headerHeight}px`, left: 0, right: 0,
           height: `${pullDistance}px`, overflow: 'hidden',
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-          paddingBottom: '10px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          {(pullDistance > 0 || refreshing) && (
+          {refreshing ? (
             <div style={{ display: 'flex', gap: '7px' }}>
               {[0, 1, 2].map(i => (
                 <div
                   key={i}
                   style={{
                     width: '7px', height: '7px', borderRadius: '50%', background: BRAND_PURPLE,
-                    opacity: refreshing ? 1 : Math.min(1, pullDistance / PULL_THRESHOLD),
-                    animation: refreshing ? `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` : 'none',
+                    animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
                   }}
                 />
               ))}
             </div>
-          )}
+          ) : showRefreshButton ? (
+            <div
+              onClick={handleManualRefresh}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '8px 16px', borderRadius: '999px',
+                background: BRAND_PURPLE, color: '#fff', fontWeight: 700, fontSize: '12.5px',
+                cursor: 'pointer', boxShadow: '0 3px 10px rgba(124,58,237,0.35)',
+              }}
+            >
+              <RefreshIcon size={13} color="#fff" />
+              Refresh
+            </div>
+          ) : pullDistance > 0 ? (
+            <div style={{ display: 'flex', gap: '7px' }}>
+              {[0, 1, 2].map(i => (
+                <div
+                  key={i}
+                  style={{
+                    width: '7px', height: '7px', borderRadius: '50%', background: BRAND_PURPLE,
+                    opacity: Math.min(1, pullDistance / PULL_THRESHOLD),
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div
@@ -1062,10 +1100,13 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
 
               return (
                 <motion.div key={post.id} layout="position" style={{ borderBottom: `8px solid ${postDivider}` }}>
+                  {/* Header row — the old separator line between owner
+                      details and the post itself is gone from here; a
+                      matching thin line now sits at the very bottom of
+                      the whole post instead (below). */}
                   <div style={{
                     display: 'flex', gap: '10px', alignItems: 'flex-start',
                     padding: '12px 16px 10px', position: 'relative',
-                    borderBottom: '1px solid var(--app-border-soft)',
                   }}>
                     <Avatar url={post.profiles?.avatar_url} name={name} size={40} onClick={() => goToAuthor(post.author_id)} />
 
@@ -1093,7 +1134,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                         <div
                           title={dept}
                           style={{
-                            fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px',
+                            fontSize: '11px', color: 'var(--text-muted)', marginTop: '0px',
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                             textAlign: 'left',
                           }}
@@ -1139,15 +1180,14 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                                 <Icon name="download" size={14} />
                                 {savingImageId === post.id ? 'Saving...' : 'Save Image'}
                               </div>
-                              {!isOwnPost && (
-                                <div
-                                  onClick={() => requestReportPost(post.id)}
-                                  style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                                >
-                                  <Icon name="flag" size={14} />
-                                  Report
-                                </div>
-                              )}
+                              {/* Report — always available, own posts included. */}
+                              <div
+                                onClick={() => requestReportPost(post.id)}
+                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                              >
+                                <Icon name="flag" size={14} />
+                                Report
+                              </div>
                               <div
                                 onClick={() => openSharePost(post)}
                                 style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
@@ -1266,6 +1306,11 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                       </motion.div>
                     )}
                   </AnimatePresence>
+
+                  {/* Divider — moved here from the header row, so it now
+                      marks the very bottom of the whole post rather than
+                      separating owner details from content. */}
+                  <div style={{ borderBottom: '1px solid var(--app-border-soft)', margin: '10px 16px 0' }} />
                 </motion.div>
               )
             })}
@@ -1625,15 +1670,14 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                           <Icon name="download" size={14} />
                           {savingImageId === viewingPost.id ? 'Saving...' : 'Save Image'}
                         </div>
-                        {viewingPost.author_id !== session.user.id && (
-                          <div
-                            onClick={() => requestReportPost(viewingPost.id)}
-                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                          >
-                            <Icon name="flag" size={14} />
-                            Report
-                          </div>
-                        )}
+                        {/* Report — always available, own posts included. */}
+                        <div
+                          onClick={() => requestReportPost(viewingPost.id)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        >
+                          <Icon name="flag" size={14} />
+                          Report
+                        </div>
                         <div
                           onClick={() => openSharePost(viewingPost)}
                           style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
