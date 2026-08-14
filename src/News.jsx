@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { NewsSkeleton } from './Skeleton'
 import { useTheme } from './ThemeContext'
-import { getDisplayName } from './displayName'
+import { getDisplayName } from './DisplayName'
 
 const LIKE_ACCENT = 'var(--app-accent)'
 const DISLIKE_COLOR = '#EF4444'

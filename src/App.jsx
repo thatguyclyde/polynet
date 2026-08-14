@@ -5,12 +5,14 @@ import { supabase } from './supabase'
 import SplashScreen from './SplashScreen'
 import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
-import Feed from './Feed'
-import News from './News'
-import Walkthrough from './Walkthrough'
-import Polymart from './Polymart'
-import Profile from './Profile'
-import Chats from './Chats'
+import React, { Suspense, lazy } from 'react'
+
+const Feed = lazy(() => import('./Feed'))
+const News = lazy(() => import('./News'))
+const Walkthrough = lazy(() => import('./Walkthrough'))
+const Polymart = lazy(() => import('./Polymart'))
+const Profile = lazy(() => import('./Profile'))
+const Chats = lazy(() => import('./Chats'))
 
 const TABS = [
   { id: 'feed', icon: Home, label: 'Home' },
@@ -490,7 +492,8 @@ function App() {
           }
         `}</style>
 
-        {!hideChrome && (
+        <Suspense fallback={<div style={{minHeight: '100vh'}} /> }>
+          {!hideChrome && (
           <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
             display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
@@ -550,6 +553,7 @@ function App() {
             )}
           </motion.div>
         </div>
+        </Suspense>
 
         {/* Bottom tab bar — reduced height (just enough for icon + label),
             and the old sliding purple indicator line above the active tab

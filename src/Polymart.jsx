@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
-import { getDisplayName } from './displayName'
+import { getDisplayName } from './DisplayName'
 
 const FILTER_ACTIVE_BG = '#FFFFFF'
 const FILTER_ACTIVE_TEXT = '#1A1A2E'

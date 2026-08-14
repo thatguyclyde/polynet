@@ -5,7 +5,7 @@ import Icon from './Icon'
 import { FeedSkeleton } from './Skeleton'
 import PublicProfileCard from './PublicProfileCard'
 import { useTheme } from './ThemeContext'
-import { getDisplayName } from './displayName'
+import { getDisplayName } from './DisplayName'
 
 const CATEGORY_STYLES = {
   school: { label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
