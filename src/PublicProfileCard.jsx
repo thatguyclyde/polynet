@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
-import { getDisplayName } from './displayName'
+import { getDisplayName } from './DisplayName'
 
 const SOCIAL_ICON_MAP = {
   instagram: 'instagram',
@@ -30,6 +30,7 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
   const [profile, setProfile] = useState(null)
   const [skills, setSkills] = useState([])
   const [loading, setLoading] = useState(true)
+  const [viewingAvatar, setViewingAvatar] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -131,15 +132,19 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
             </div>
           ) : (
             <div style={{ padding: '36px 24px 26px', textAlign: 'center' }}>
+              {/* Shared layoutId with the maximized version below — since
+                  both are perfect circles (equal width/height), Framer
+                  Motion scales this uniformly with no distortion into an
+                  oval as it enlarges. */}
               <motion.div
-                initial={{ scale: 0.4, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 220, damping: 18, delay: 0.05 }}
+                layoutId="profile-card-avatar"
+                onClick={() => setViewingAvatar(true)}
+                whileTap={{ scale: 0.96 }}
                 style={{
                   width: '104px', height: '104px', borderRadius: '50%', overflow: 'hidden',
                   background: 'rgba(124,58,237,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   margin: '0 auto', boxShadow: '0 8px 24px rgba(124,58,237,0.25)',
-                  border: '4px solid var(--card-bg)',
+                  border: '4px solid var(--card-bg)', cursor: 'pointer',
                 }}
               >
                 {profile?.avatar_url ? (
@@ -161,22 +166,25 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
                   {profile?.department || 'No department set'}{profile?.year_of_study ? ` · Year ${profile.year_of_study}` : ''}
                 </div>
 
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '10px', padding: '5px 11px', borderRadius: '999px', background: 'rgba(124,58,237,0.12)', color: BRAND_PURPLE, fontSize: '11px', fontWeight: 700 }}>
-                  <Icon name="check" size={10} />
-                  Verified student
-                </div>
-
                 {profile?.bio && (
                   <p style={{ margin: '14px 0 0', fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6 }}>{profile.bio}</p>
                 )}
 
                 {skills.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', marginTop: '16px' }}>
-                    {skills.map(skill => (
-                      <div key={skill.id} style={{ background: 'var(--page-bg)', border: '1px solid var(--app-border-soft)', borderRadius: '999px', padding: '5px 11px', fontSize: '11.5px', fontWeight: 700, color: 'var(--text-strong)' }}>
-                        {skill.skill_name}
-                      </div>
-                    ))}
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{
+                      fontSize: '10px', fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase',
+                      color: 'var(--text-muted)', marginBottom: '8px',
+                    }}>
+                      Skills
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center' }}>
+                      {skills.map(skill => (
+                        <div key={skill.id} style={{ background: 'var(--page-bg)', border: '1px solid var(--app-border-soft)', borderRadius: '999px', padding: '5px 11px', fontSize: '11.5px', fontWeight: 700, color: 'var(--text-strong)' }}>
+                          {skill.skill_name}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -221,6 +229,45 @@ function PublicProfileCard({ userId, session, onClose, onMessage, hideMessageBut
           )}
         </motion.div>
       </motion.div>
+
+      {/* MAXIMIZED AVATAR — a bigger circle, not a fullscreen rectangle
+          like the post/news image viewers. Tapping anywhere outside the
+          circle closes it. */}
+      {viewingAvatar && (
+        <motion.div
+          key="avatar-maximize-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={() => setViewingAvatar(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 450,
+            background: 'rgba(10,10,14,0.75)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '40px',
+          }}
+        >
+          <motion.div
+            layoutId="profile-card-avatar"
+            transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: 'min(78vw, 320px)', height: 'min(78vw, 320px)',
+              borderRadius: '50%', overflow: 'hidden',
+              background: 'rgba(124,58,237,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              border: '4px solid var(--card-bg)',
+            }}
+          >
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ color: BRAND_PURPLE, fontSize: '72px', fontWeight: 700 }}>{initials}</span>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   )
 }

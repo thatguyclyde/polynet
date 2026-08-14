@@ -120,8 +120,7 @@ function DislikeButton({ isDisliked, count, pulseKey, onClick }) {
   )
 }
 
-// Delete confirmation — same visual pattern as Feed.jsx's ConfirmSheet,
-// replacing the old plain window.confirm().
+// Two-button confirmation — used for Delete and Download.
 function ConfirmSheet({ title, body, confirmLabel, danger, onConfirm, onCancel }) {
   return (
     <div
@@ -172,8 +171,49 @@ function ConfirmSheet({ title, body, confirmLabel, danger, onConfirm, onCancel }
   )
 }
 
-// Full share sheet — same pattern as Feed.jsx's ShareSheet, with a Download
-// Image option added for articles that have one.
+// Single-button acknowledgement — used for the "Reported" notice, replacing
+// the old window.alert().
+function InfoSheet({ title, body, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 18px' }} />
+        <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'center' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>{body}</p>
+        <button
+          onClick={onClose}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+            background: POST_EDGE_PURPLE, color: '#fff',
+            fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+          }}
+        >
+          Got it
+        </button>
+      </motion.div>
+    </div>
+  )
+}
+
+// Share sheet — WhatsApp / Copy Link / Download Image / More options.
 function ShareSheet({ article, onClose, onDownload }) {
   const [copied, setCopied] = useState(false)
   const url = article?.shareUrl
@@ -202,9 +242,9 @@ function ShareSheet({ article, onClose, onDownload }) {
     onClose()
   }
 
-  function downloadImage() {
-    onDownload(article)
+  function requestDownload() {
     onClose()
+    onDownload(article)
   }
 
   return (
@@ -246,7 +286,7 @@ function ShareSheet({ article, onClose, onDownload }) {
         </div>
 
         {article?.image_url && (
-          <div onClick={downloadImage} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
+          <div onClick={requestDownload} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
             <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="download" size={17} color="var(--app-accent)" />
             </div>
@@ -294,6 +334,9 @@ function News({ session, isAdmin }) {
   const tapTimer = useRef(null)
 
   const [deleteArticleId, setDeleteArticleId] = useState(null)
+  const [downloadArticle, setDownloadArticle] = useState(null)
+  const [reportArticleId, setReportArticleId] = useState(null)
+  const [reportedNotice, setReportedNotice] = useState(false)
   const [sharingArticle, setSharingArticle] = useState(null)
 
   // The read timestamp from BEFORE this visit — anything newer than this
@@ -574,18 +617,24 @@ function News({ session, isAdmin }) {
     }
   }
 
-  function reportArticle(articleId) {
-    alert('Article reported. Thank you for helping keep our community safe!')
+  function requestReportArticle(articleId) {
     setOpenMenuId(null)
+    setReportArticleId(articleId)
   }
 
-  function openShareSheet(article) {
-    setOpenMenuId(null)
-    const url = `${window.location.origin}${window.location.pathname}#article-${article.id}`
-    setSharingArticle({ ...article, shareUrl: url })
+  function confirmReportArticle() {
+    setReportArticleId(null)
+    setReportedNotice(true)
   }
 
-  async function handleDownloadImage(article) {
+  function requestDownloadImage(article) {
+    setOpenMenuId(null)
+    setDownloadArticle(article)
+  }
+
+  async function confirmDownloadImage() {
+    const article = downloadArticle
+    setDownloadArticle(null)
     if (!article?.image_url) return
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
     if (isMobile) {
@@ -608,6 +657,12 @@ function News({ session, isAdmin }) {
       console.error('Error downloading image, falling back to opening it:', err)
       window.open(article.image_url, '_blank')
     }
+  }
+
+  function openShareSheet(article) {
+    setOpenMenuId(null)
+    const url = `${window.location.origin}${window.location.pathname}#article-${article.id}`
+    setSharingArticle({ ...article, shareUrl: url })
   }
 
   const headerBg = isDark ? '#000000' : '#FFFFFF'
@@ -854,6 +909,7 @@ function News({ session, isAdmin }) {
           const isDisliked = dislikedIds.has(article.id)
           const isViewingThis = viewingArticle?.id === article.id
           const posterName = getDisplayName(article.profiles, 'PolyNet Admin')
+          const menuOpenForThisArticle = openMenuId === article.id && !isViewingThis
 
           // Purple edge = unread indicator: only for OTHER people's posts
           // newer than the read-state captured at the start of THIS visit,
@@ -905,7 +961,63 @@ function News({ session, isAdmin }) {
                       >
                         <Icon name="ellipsis-vertical" size={17} />
                       </div>
-                      {openMenuId === article.id && !isViewingThis && (
+                      {menuOpenForThisArticle && (
+                        <>
+                          <div
+                            onClick={() => setOpenMenuId(null)}
+                            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                          />
+                          <div style={{
+                            position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                            background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '150px', overflow: 'hidden'
+                          }}>
+                            {isOwnArticle && (
+                              <div
+                                onClick={() => requestDeleteArticle(article.id)}
+                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                              >
+                                <Icon name="trash-2" size={14} />
+                                Delete
+                              </div>
+                            )}
+                            {!isOwnArticle && (
+                              <div
+                                onClick={() => requestReportArticle(article.id)}
+                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                              >
+                                <Icon name="flag" size={14} />
+                                Report
+                              </div>
+                            )}
+                            <div
+                              onClick={() => openShareSheet(article)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                            >
+                              <Icon name="share-2" size={14} />
+                              Share
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {hasImage && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2px', position: 'relative' }}>
+                    <div
+                      onClick={() => setOpenMenuId(openMenuId === article.id ? null : article.id)}
+                      style={{ cursor: 'pointer', padding: '2px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Icon name="ellipsis-vertical" size={17} />
+                    </div>
+                    {menuOpenForThisArticle && (
+                      <>
+                        <div
+                          onClick={() => setOpenMenuId(null)}
+                          style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                        />
                         <div style={{
                           position: 'absolute', top: '100%', right: 0, zIndex: 100,
                           background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
@@ -920,9 +1032,16 @@ function News({ session, isAdmin }) {
                               Delete
                             </div>
                           )}
+                          <div
+                            onClick={() => requestDownloadImage(article)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="download" size={14} />
+                            Download
+                          </div>
                           {!isOwnArticle && (
                             <div
-                              onClick={() => reportArticle(article.id)}
+                              onClick={() => requestReportArticle(article.id)}
                               style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                             >
                               <Icon name="flag" size={14} />
@@ -937,51 +1056,7 @@ function News({ session, isAdmin }) {
                             Share
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {hasImage && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2px', position: 'relative' }}>
-                    <div
-                      onClick={() => setOpenMenuId(openMenuId === article.id ? null : article.id)}
-                      style={{ cursor: 'pointer', padding: '2px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      <Icon name="ellipsis-vertical" size={17} />
-                    </div>
-                    {openMenuId === article.id && !isViewingThis && (
-                      <div style={{
-                        position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                        background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '150px', overflow: 'hidden'
-                      }}>
-                        {isOwnArticle && (
-                          <div
-                            onClick={() => requestDeleteArticle(article.id)}
-                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                          >
-                            <Icon name="trash-2" size={14} />
-                            Delete
-                          </div>
-                        )}
-                        {!isOwnArticle && (
-                          <div
-                            onClick={() => reportArticle(article.id)}
-                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                          >
-                            <Icon name="flag" size={14} />
-                            Report
-                          </div>
-                        )}
-                        <div
-                          onClick={() => openShareSheet(article)}
-                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
-                        >
-                          <Icon name="share-2" size={14} />
-                          Share
-                        </div>
-                      </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -1107,44 +1182,66 @@ function News({ session, isAdmin }) {
 
                 <AnimatePresence>
                   {openMenuId === viewingArticle.id && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9, y: -6 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.9, y: -6 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                      style={{
-                        position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 310,
-                        background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
-                        boxShadow: '0 8px 28px rgba(0,0,0,0.35)', minWidth: '150px', overflow: 'hidden',
-                        transformOrigin: 'top right',
-                      }}
-                    >
-                      {viewingArticle.author_id === session.user.id && (
-                        <div
-                          onClick={() => requestDeleteArticle(viewingArticle.id)}
-                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                        >
-                          <Icon name="trash-2" size={14} />
-                          Delete
-                        </div>
-                      )}
-                      {viewingArticle.author_id !== session.user.id && (
-                        <div
-                          onClick={() => reportArticle(viewingArticle.id)}
-                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                        >
-                          <Icon name="flag" size={14} />
-                          Report
-                        </div>
-                      )}
-                      <div
-                        onClick={() => openShareSheet(viewingArticle)}
-                        style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                    <>
+                      {/* Tap-outside-to-close backdrop — sits below this
+                          dropdown's z-index (310), above the viewer's own
+                          background (300), so a stray tap closes only the
+                          menu, not the whole fullscreen viewer. */}
+                      <motion.div
+                        key="viewer-menu-backdrop"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.1 }}
+                        onClick={(e) => { e.stopPropagation(); setOpenMenuId(null) }}
+                        style={{ position: 'fixed', inset: 0, zIndex: 305 }}
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                        style={{
+                          position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 310,
+                          background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                          boxShadow: '0 8px 28px rgba(0,0,0,0.35)', minWidth: '150px', overflow: 'hidden',
+                          transformOrigin: 'top right',
+                        }}
                       >
-                        <Icon name="share-2" size={14} />
-                        Share
-                      </div>
-                    </motion.div>
+                        {viewingArticle.author_id === session.user.id && (
+                          <div
+                            onClick={() => requestDeleteArticle(viewingArticle.id)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="trash-2" size={14} />
+                            Delete
+                          </div>
+                        )}
+                        <div
+                          onClick={() => requestDownloadImage(viewingArticle)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                        >
+                          <Icon name="download" size={14} />
+                          Download
+                        </div>
+                        {viewingArticle.author_id !== session.user.id && (
+                          <div
+                            onClick={() => requestReportArticle(viewingArticle.id)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="flag" size={14} />
+                            Report
+                          </div>
+                        )}
+                        <div
+                          onClick={() => openShareSheet(viewingArticle)}
+                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                        >
+                          <Icon name="share-2" size={14} />
+                          Share
+                        </div>
+                      </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
@@ -1195,11 +1292,46 @@ function News({ session, isAdmin }) {
       </AnimatePresence>
 
       <AnimatePresence>
+        {downloadArticle && (
+          <ConfirmSheet
+            title="Download this image?"
+            body="It will be saved to your device."
+            confirmLabel="Download"
+            onConfirm={confirmDownloadImage}
+            onCancel={() => setDownloadArticle(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {reportArticleId && (
+          <ConfirmSheet
+            title="Report this article?"
+            body="This flags it for review by campus moderators."
+            confirmLabel="Report"
+            danger
+            onConfirm={confirmReportArticle}
+            onCancel={() => setReportArticleId(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {reportedNotice && (
+          <InfoSheet
+            title="Reported"
+            body="Thank you for helping keep our community safe."
+            onClose={() => setReportedNotice(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {sharingArticle && (
           <ShareSheet
             article={sharingArticle}
             onClose={() => setSharingArticle(null)}
-            onDownload={handleDownloadImage}
+            onDownload={requestDownloadImage}
           />
         )}
       </AnimatePresence>

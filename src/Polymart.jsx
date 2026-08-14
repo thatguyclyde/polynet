@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
@@ -9,6 +9,19 @@ const FILTER_ACTIVE_BG = '#FFFFFF'
 const FILTER_ACTIVE_TEXT = '#1A1A2E'
 const FILTER_PURPLE_EDGE = '#7C3AED'
 const VERIFIED_BLUE = '#1D9BF0'
+
+const REPORT_REASONS = [
+  'Prohibited or illegal item',
+  'Counterfeit or fake goods',
+  'Misleading listing (price, condition, or photos)',
+  'Suspected scam or fraud',
+  'Stolen item',
+  'Unsafe or dangerous item',
+  'Harassment from buyer/seller',
+  'Explicit or inappropriate images',
+  'Spam or duplicate listing',
+  'Something else',
+]
 
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000)
@@ -123,6 +136,88 @@ function ConfirmSheet({ title, body, confirmLabel, danger, onConfirm, onCancel }
           }}
         >
           Cancel
+        </button>
+      </motion.div>
+    </div>
+  )
+}
+
+// Reason picker for reporting a listing — same pattern as Feed.jsx's
+// ReportReasonsSheet, with marketplace-specific reasons.
+function ReportReasonsSheet({ onSelect, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px', maxHeight: '75vh', overflowY: 'auto',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 12px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 4px' }} />
+        <h3 style={{ margin: '10px 12px 2px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-strong)' }}>Report listing</h3>
+        <p style={{ margin: '0 12px 10px', fontSize: '12px', color: 'var(--text-muted)' }}>What's the issue?</p>
+        {REPORT_REASONS.map(reason => (
+          <div
+            key={reason}
+            onClick={() => onSelect(reason)}
+            style={{ padding: '13px 12px', cursor: 'pointer', borderRadius: '12px', fontSize: '13.5px', fontWeight: 600, color: 'var(--text-strong)' }}
+          >
+            {reason}
+          </div>
+        ))}
+      </motion.div>
+    </div>
+  )
+}
+
+// Single-button acknowledgement, same pattern used elsewhere for report
+// confirmations.
+function InfoSheet({ title, body, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 18px' }} />
+        <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'center' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>{body}</p>
+        <button
+          onClick={onClose}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+            background: FILTER_PURPLE_EDGE, color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+          }}
+        >
+          Got it
         </button>
       </motion.div>
     </div>
@@ -298,6 +393,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   const [showComposer, setShowComposer] = useState(false)
   const [selectedListing, setSelectedListing] = useState(null)
   const [showMyListings, setShowMyListings] = useState(false)
+  const [openingChat, setOpeningChat] = useState(false)
 
   const [title, setTitle] = useState('')
   const [price, setPrice] = useState('')
@@ -308,6 +404,12 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   const [posting, setPosting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+
+  // Long-press-to-report — same pattern as the Inbox rows in Chats.jsx.
+  const [reportTarget, setReportTarget] = useState(null)
+  const [reportedNotice, setReportedNotice] = useState(false)
+  const pressTimer = useRef(null)
+  const longPressTriggered = useRef(false)
 
   useEffect(() => {
     fetchListings()
@@ -415,6 +517,63 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     if (selectedListing?.id === listingId) setSelectedListing(null)
   }
 
+  // Brief, visible "Opening chat..." feedback on the button itself before
+  // handing off to App.jsx's page switch — without this delay, the page
+  // change happens so fast the label change never actually gets painted.
+  // Chats' own loading dots take over right after this, which is expected.
+  function handleMessageSeller() {
+    if (openingChat || !onMessageSeller) return
+    setOpeningChat(true)
+    setTimeout(() => {
+      onMessageSeller({
+        listingId: selectedListing.id,
+        sellerId: selectedListing.seller_id,
+        listingTitle: selectedListing.title,
+        sellerName: getDisplayName(selectedListing.profiles),
+        listingImage: selectedListing.image_url || null,
+        sellerAvatar: selectedListing.profiles?.avatar_url || null,
+      })
+    }, 300)
+  }
+
+  // ── Long-press-to-report on grid cards ─────────────────────────────
+  function handlePressStart(listing) {
+    longPressTriggered.current = false
+    pressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true
+      if (navigator.vibrate) navigator.vibrate(10)
+      setReportTarget(listing)
+    }, 480)
+  }
+
+  function handlePressEnd() {
+    clearTimeout(pressTimer.current)
+  }
+
+  function handleCardClick(listing) {
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false
+      return
+    }
+    setSelectedListing(listing)
+  }
+
+  async function submitReport(reason) {
+    const listing = reportTarget
+    setReportTarget(null)
+    if (!listing) return
+    const { error } = await supabase.from('reports').insert({
+      target_type: 'listing',
+      target_id: listing.id,
+      reporter_id: session.user.id,
+      reason,
+      context_preview: (listing.title || '').slice(0, 140) || null,
+      context_author_id: listing.seller_id,
+    })
+    if (error) console.error('Error submitting report:', error.message)
+    setReportedNotice(true)
+  }
+
   const filtered = listings.filter(l => {
     const matchesCat = activeCat === 'all' || l.category === activeCat
     const matchesSearch = l.title.toLowerCase().includes(search.toLowerCase())
@@ -454,75 +613,83 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
           padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
           display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10,
         }}>
-          <div onClick={() => setSelectedListing(null)} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
+          <div onClick={() => { setSelectedListing(null); setOpeningChat(false) }} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
             <Icon name="arrowLeft" size={20} />
           </div>
           <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-strong)' }}>Listing details</span>
         </div>
 
-        {l.image_url ? (
-          <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '260px', objectFit: 'cover' }}
-            onError={(e) => { e.target.style.display = 'none' }} />
-        ) : (
-          <div style={{ width: '100%', height: '260px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name={categoryIcon(l.category)} size={44} color="var(--app-accent)" />
-          </div>
-        )}
+        {/* Shared layoutId with the grid thumbnail below — this is what
+            drives the zoom-in transition from card to full detail view. */}
+        <motion.div
+          layoutId={`listing-visual-${l.id}`}
+          transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+          style={{ width: '100%', height: '260px', position: 'relative', overflow: 'hidden' }}
+        >
+          {l.image_url ? (
+            <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={(e) => { e.target.style.display = 'none' }} />
+          ) : (
+            <div style={{ width: '100%', height: '100%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name={categoryIcon(l.category)} size={44} color="var(--app-accent)" />
+            </div>
+          )}
+        </motion.div>
 
-        <div style={{ padding: '20px' }}>
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.25 }}
+          style={{ padding: '20px' }}
+        >
           <div style={{ fontSize: '24px', fontWeight: 900, color: 'var(--app-accent)', marginBottom: '6px' }}>
             ${Number(l.price).toFixed(2)}
           </div>
-          <h2 style={{ margin: '0 0 12px', fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>{l.title}</h2>
+          <h2 style={{ margin: '0 0 12px', fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'left', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{l.title}</h2>
 
-          {/* Seller row — name/department on the left, not center */}
+          {/* Seller row — left-aligned, wraps safely if the name is long */}
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '18px', textAlign: 'left' }}>
             <div style={{
               width: '36px', height: '36px', borderRadius: '10px', background: 'var(--app-accent-soft)',
               color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>
               {getDisplayName(l.profiles, 'S').split(' ').map(n => n[0]).slice(0, 2).join('')}
             </div>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', wordBreak: 'break-word' }}>
                 {getDisplayName(l.profiles)}
                 {l.profiles?.is_admin && <VerifiedBadge size={12} />}
               </div>
-              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{l.profiles?.department} · {timeAgo(l.created_at)}</div>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', wordBreak: 'break-word' }}>{l.profiles?.department} · {timeAgo(l.created_at)}</div>
             </div>
           </div>
 
-          {/* Description — on the left, not center */}
+          {/* Description — left-aligned, wraps safely for long words/URLs */}
           {l.description && (
             <div style={{ marginBottom: '20px', textAlign: 'left' }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px', marginBottom: '6px' }}>
                 DESCRIPTION
               </div>
-              <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-body)', lineHeight: 1.6 }}>{l.description}</p>
+              <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-body)', lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'break-word' }}>{l.description}</p>
             </div>
           )}
 
           <button
-            onClick={() => onMessageSeller && onMessageSeller({
-  listingId: selectedListing.id,
-  sellerId: selectedListing.seller_id,
-  listingTitle: selectedListing.title,
-  sellerName: getDisplayName(selectedListing.profiles),
-  listingImage: selectedListing.image_url || null,
-  sellerAvatar: selectedListing.profiles?.avatar_url || null,
-})}
+            onClick={handleMessageSeller}
+            disabled={openingChat}
             style={{
               width: '100%', padding: '15px', borderRadius: '14px', border: 'none',
               background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '15px',
-              cursor: 'pointer', boxShadow: 'var(--shadow-accent)',
+              cursor: openingChat ? 'default' : 'pointer', boxShadow: 'var(--shadow-accent)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              opacity: openingChat ? 0.75 : 1,
             }}
           >
             <Icon name="comment" size={17} color="#fff" />
-            Message Seller
+            {openingChat ? 'Opening chat...' : 'Message Seller'}
           </button>
-        </div>
+        </motion.div>
       </div>
     )
   }
@@ -643,7 +810,10 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                     style={{ ...composerInput, resize: 'none', fontFamily: 'inherit' }}
                   />
 
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  {/* Category chips — even 3-column grid so they fully fill
+                      the composer width, instead of flex-wrap pills that
+                      bunch to the left with leftover space on the right. */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
                     {CATEGORIES.filter(c => c.id !== 'all').map(cat => {
                       const isSelected = category === cat.id
                       return (
@@ -651,9 +821,9 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                           key={cat.id}
                           onClick={() => setCategory(cat.id)}
                           style={{
-                            display: 'flex', alignItems: 'center', gap: '5px',
-                            padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                            padding: '9px 6px', borderRadius: '12px', fontSize: '11.5px', fontWeight: 600,
+                            cursor: 'pointer', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word',
                             background: isSelected ? 'var(--app-accent)' : 'var(--app-accent-soft)',
                             color: isSelected ? '#fff' : 'var(--app-accent)',
                           }}
@@ -695,7 +865,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                   </label>
 
                   {errorMsg && (
-                    <p style={{ color: 'var(--danger)', fontSize: '12.5px', marginBottom: '10px', fontWeight: 600 }}>
+                    <p style={{ color: 'var(--danger)', fontSize: '12.5px', marginBottom: '10px', fontWeight: 600, wordBreak: 'break-word' }}>
                       {errorMsg}
                     </p>
                   )}
@@ -737,7 +907,9 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       <div style={{ background: listingsAreaBg, minHeight: '40vh', paddingTop: '78px' }}>
 
         <div style={{ padding: '12px 20px 4px' }}>
-          {/* Search bar (65%) + My Listings button (remaining 35%) */}
+          {/* Search bar (65%) + My Listings button (remaining 35%) — the
+              button's label is allowed to wrap onto two lines rather than
+              overflow on narrower screens. */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <input
               value={search}
@@ -752,14 +924,14 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
             <button
               onClick={() => setShowMyListings(true)}
               style={{
-                flex: 1, padding: '0 8px', borderRadius: '12px', border: 'none',
-                background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '11.5px',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                boxShadow: 'var(--shadow-accent)',
+                flex: 1, minWidth: 0, padding: '0 6px', borderRadius: '12px', border: 'none',
+                background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '11px',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                boxShadow: 'var(--shadow-accent)', whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.15,
               }}
             >
-              <Icon name="package" size={13} color="#fff" />
-              My Listings
+              <Icon name="package" size={12} color="#fff" style={{ flexShrink: 0 }} />
+              <span style={{ overflowWrap: 'break-word' }}>My Listings</span>
             </button>
           </div>
 
@@ -803,31 +975,42 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
           {filtered.map(l => (
             <div
               key={l.id}
-              onClick={() => setSelectedListing(l)}
+              onClick={() => handleCardClick(l)}
+              onMouseDown={() => handlePressStart(l)}
+              onMouseUp={handlePressEnd}
+              onMouseLeave={handlePressEnd}
+              onTouchStart={() => handlePressStart(l)}
+              onTouchEnd={handlePressEnd}
               style={{
                 background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
                 border: '1px solid var(--app-border)', cursor: 'pointer',
                 boxShadow: 'var(--shadow-card)',
+                userSelect: 'none', WebkitUserSelect: 'none',
               }}
             >
-              {l.image_url ? (
-                <img
-                  src={l.image_url}
-                  alt={l.title}
-                  style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }}
-                  onError={(e) => {
-                    e.target.style.display = 'none'
-                    e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
-                  }}
-                />
-              ) : null}
-              <div className="fallback-icon" style={{
-                width: '100%', height: '120px', background: 'var(--app-accent-soft)',
-                display: l.image_url ? 'none' : 'flex',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Icon name={categoryIcon(l.category)} size={28} color="var(--app-accent)" />
-              </div>
+              {/* Shared layoutId with the detail page's hero image — this
+                  drives the zoom-in transition on tap. */}
+              <motion.div layoutId={`listing-visual-${l.id}`} style={{ position: 'relative', width: '100%', height: '120px', overflow: 'hidden' }}>
+                {l.image_url ? (
+                  <img
+                    src={l.image_url}
+                    alt={l.title}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    onError={(e) => {
+                      e.target.style.display = 'none'
+                      e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
+                    }}
+                  />
+                ) : null}
+                <div className="fallback-icon" style={{
+                  width: '100%', height: '100%', background: 'var(--app-accent-soft)',
+                  display: l.image_url ? 'none' : 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  position: 'absolute', inset: 0,
+                }}>
+                  <Icon name={categoryIcon(l.category)} size={28} color="var(--app-accent)" />
+                </div>
+              </motion.div>
               <div style={{ padding: '10px' }}>
                 <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
                   ${Number(l.price).toFixed(2)}
@@ -848,6 +1031,25 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 
         <div style={{ height: '20px' }} />
       </div>
+
+      <AnimatePresence>
+        {reportTarget && (
+          <ReportReasonsSheet
+            onSelect={submitReport}
+            onClose={() => setReportTarget(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {reportedNotice && (
+          <InfoSheet
+            title="Reported"
+            body="Thank you for helping keep our community safe."
+            onClose={() => setReportedNotice(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&display=swap');

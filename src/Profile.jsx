@@ -4,7 +4,8 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
 import { ProfileSkeleton } from './Skeleton'
-import { getDisplayName } from './displayName'
+import { getDisplayName } from './DisplayName'
+import ReportsScreen from './ReportsScreen'
 
 const DEPARTMENTS = [
   'Applied Arts (Clothing Technology, Fashion & Textiles)',
@@ -25,34 +26,11 @@ const DEPARTMENTS = [
   'Secretarial Studies',
 ]
 
-const SOCIAL_PLATFORMS = [
-  { id: 'instagram', label: 'Instagram', icon: 'instagram' },
-  { id: 'twitter', label: 'Twitter / X', icon: 'twitter' },
-  { id: 'tiktok', label: 'TikTok', icon: 'tiktok' },
-  { id: 'facebook', label: 'Facebook', icon: 'facebook' },
-  { id: 'linkedin', label: 'LinkedIn', icon: 'linkedin' },
-  { id: 'youtube', label: 'YouTube', icon: 'youtube' },
-  { id: 'snapchat', label: 'Snapchat', icon: 'snapchat' },
-  { id: 'github', label: 'GitHub', icon: 'github' },
-  { id: 'website', label: 'Website', icon: 'globe' },
-]
-
 const VERIFIED_BLUE = '#1D9BF0'
-const HEADER_GRADIENT = 'linear-gradient(120deg, #7C3AED 0%, #A855F7 45%, #C084FC 100%)'
 
-// International-format WhatsApp number (0787525495 → 263 787525495, no
-// leading 0) — used with the whatsapp:// scheme so this opens the actual
-// installed app rather than the wa.me website.
-const WHATSAPP_NUMBER = '263711881821'
+const WHATSAPP_NUMBER = '263787525495'
 const CONTACT_EMAIL = 'clydechiruka4@gmail.com'
-
-function platformInfo(id) {
-  return SOCIAL_PLATFORMS.find(p => p.id === id) || SOCIAL_PLATFORMS[SOCIAL_PLATFORMS.length - 1]
-}
-
-function whatsappUrlFor(digits) {
-  return `https://wa.me/${digits}`
-}
+const FOUNDER_EMAIL = 'clydechiruka4@gmail.com'
 
 function whatsappAppUrl(text) {
   return `whatsapp://send?phone=${WHATSAPP_NUMBER}&text=${encodeURIComponent(text)}`
@@ -160,10 +138,6 @@ function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onCancel }
   )
 }
 
-// Bottom sheet offering both contact routes — WhatsApp opens the real app
-// via the whatsapp:// scheme (not the web version), Email opens the
-// person's mail app. Two separate options rather than an automatic
-// fallback, since not everyone has WhatsApp installed.
 function ContactSheet({ onClose }) {
   const message = 'Hi, I have a question about PolyNet.'
   return (
@@ -199,8 +173,7 @@ function ContactSheet({ onClose }) {
           </div>
           <div>
             <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>WhatsApp</div>
-            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>071 188 1821
-            </div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>0787 525 495</div>
           </div>
         </a>
 
@@ -230,18 +203,12 @@ function Profile({ session, onBack }) {
   const [deptSearch, setDeptSearch] = useState('')
   const [showDept, setShowDept] = useState(false)
   const [year, setYear] = useState(null)
-  const [bio, setBio] = useState('')
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarPreview, setAvatarPreview] = useState(null)
   const [skills, setSkills] = useState([])
   const [skillSearch, setSkillSearch] = useState('')
   const [showSkillList, setShowSkillList] = useState(false)
-  const [whatsapp, setWhatsapp] = useState('')
-  const [socialLinks, setSocialLinks] = useState([])
-  const [newLinkPlatform, setNewLinkPlatform] = useState('instagram')
-  const [newLinkUrl, setNewLinkUrl] = useState('')
-  const [showAddLink, setShowAddLink] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -250,9 +217,8 @@ function Profile({ session, onBack }) {
   const [confirmModal, setConfirmModal] = useState(null)
   const [viewingAvatar, setViewingAvatar] = useState(false)
   const [contactSheetOpen, setContactSheetOpen] = useState(false)
+  const [showReports, setShowReports] = useState(false)
 
-  // Admin-specific fields — profiles shared between students and admins,
-  // so which fields apply depends on isAdmin.
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminTitle, setAdminTitle] = useState('')
 
@@ -264,7 +230,7 @@ function Profile({ session, onBack }) {
     const [{ data }, { data: skillData }, { data: platformSkills }] = await Promise.all([
       supabase
         .from('profiles')
-        .select('full_name, department, year_of_study, bio, avatar_url, whatsapp_number, social_links, is_admin, admin_title')
+        .select('full_name, department, year_of_study, avatar_url, is_admin, admin_title')
         .eq('id', session.user.id)
         .maybeSingle(),
       supabase
@@ -280,10 +246,7 @@ function Profile({ session, onBack }) {
       setFullName(data.full_name || '')
       setDepartment(data.department || '')
       setYear(data.year_of_study || null)
-      setBio(data.bio || '')
       setAvatarUrl(data.avatar_url || null)
-      setWhatsapp(data.whatsapp_number || '')
-      setSocialLinks(data.social_links || [])
       setIsAdmin(!!data.is_admin)
       setAdminTitle(data.admin_title || '')
     }
@@ -336,17 +299,6 @@ function Profile({ session, onBack }) {
     setSkills(skills.filter(s => s.id !== id))
   }
 
-  function addSocialLink() {
-    if (!newLinkUrl.trim()) return
-    setSocialLinks(prev => [...prev, { platform: newLinkPlatform, url: newLinkUrl.trim() }])
-    setNewLinkUrl('')
-    setShowAddLink(false)
-  }
-
-  function removeSocialLink(idx) {
-    setSocialLinks(prev => prev.filter((_, i) => i !== idx))
-  }
-
   async function performSave() {
     setSaving(true)
     setMessage('')
@@ -369,15 +321,9 @@ function Profile({ session, onBack }) {
       newAvatarUrl = urlData.publicUrl
     }
 
-    // Admins and students save different identity/secondary fields —
-    // admins never touch full_name (their title stands in as their name
-    // everywhere), students never touch admin_title.
     const updatePayload = {
       department,
-      bio,
       avatar_url: newAvatarUrl,
-      whatsapp_number: whatsapp.trim() || null,
-      social_links: socialLinks,
     }
     if (isAdmin) {
       updatePayload.admin_title = adminTitle.trim()
@@ -422,24 +368,26 @@ function Profile({ session, onBack }) {
     s.toLowerCase().includes(skillSearch.toLowerCase()) &&
     !skills.find(ms => ms.skill_name.toLowerCase() === s.toLowerCase())
   )
-  // The name shown everywhere on this screen — an admin's title stands in
-  // for their name, since they never set a full_name during onboarding.
   const displayName = getDisplayName(
     { full_name: fullName, is_admin: isAdmin, admin_title: adminTitle },
     isAdmin ? 'PolyNet Admin' : 'Your Name'
   )
   const initials = displayName.split(' ').map(n => n[0]).slice(0, 2).join('') || 'S'
-  const whatsappDigits = whatsapp.replace(/[^0-9]/g, '')
+  const isFounder = session.user.email === FOUNDER_EMAIL
 
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-        <div style={{ padding: '18px 20px 12px', background: HEADER_GRADIENT, position: 'sticky', top: 0, zIndex: 20 }}>
-          <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#fff' }}>My Profile</h1>
+        <div style={{ padding: '18px 20px 12px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
+          <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-strong)' }}>My Profile</h1>
         </div>
         <ProfileSkeleton />
       </div>
     )
+  }
+
+  if (showReports) {
+    return <ReportsScreen onBack={() => setShowReports(false)} />
   }
 
   if (infoPage === 'about') {
@@ -472,7 +420,7 @@ function Profile({ session, onBack }) {
   if (infoPage === 'privacy') {
     return (
       <InfoPage title="Privacy Policy" onBack={() => setInfoPage(null)}>
-        <p><strong>What we collect:</strong> your name, department, year, bio, avatar, skills, WhatsApp number and social links, plus posts and listings you create.</p>
+        <p><strong>What we collect:</strong> your name, department, year, avatar, and skills, plus posts and listings you create.</p>
         <p style={{ marginTop: '14px' }}><strong>Your control:</strong> edit or remove any of it here, anytime.</p>
       </InfoPage>
     )
@@ -481,13 +429,10 @@ function Profile({ session, onBack }) {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', paddingBottom: editMode ? '110px' : '24px' }}>
 
-      {/* ═══ STICKY HEADER — purple gradient now runs all the way through
-          the header itself, so the "My Profile" label sits inside the
-          gradient rather than on a plain bar above it. Back is now a real
-          labeled pill button instead of a bare chevron icon. ═══ */}
       <div style={{
-        padding: '16px 20px 14px',
-        background: HEADER_GRADIENT,
+        padding: '16px 20px',
+        background: 'var(--card-bg)',
+        borderBottom: '1px solid var(--app-border)',
         position: 'sticky',
         top: 0,
         zIndex: 20,
@@ -495,7 +440,7 @@ function Profile({ session, onBack }) {
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
-        <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#fff' }}>
+        <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-strong)' }}>
           {editMode ? 'Edit Profile' : 'My Profile'}
         </h1>
 
@@ -508,7 +453,7 @@ function Profile({ session, onBack }) {
                 setAvatarPreview(null)
                 fetchProfile()
               }}
-              style={{ color: 'rgba(255,255,255,0.85)', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: '4px' }}
+              style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: '4px' }}
             >
               Cancel
             </span>
@@ -520,17 +465,15 @@ function Profile({ session, onBack }) {
               aria-label="Back"
               style={{
                 cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '5px',
-                padding: '8px 16px',
+                padding: '7px 16px',
                 borderRadius: '999px',
-                border: 'none',
-                background: 'rgba(255,255,255,0.18)',
-                color: '#fff',
+                border: '1px solid var(--app-border-soft)',
+                background: 'var(--page-bg)',
+                color: 'var(--text-strong)',
                 fontWeight: 700,
                 fontSize: '13px',
               }}
             >
-              <Icon name="arrowLeft" size={14} color="#fff" />
               Back
             </button>
           )}
@@ -539,14 +482,12 @@ function Profile({ session, onBack }) {
 
       <div style={{ padding: '16px' }}>
 
-        {/* ═══ HERO — gradient smoothly fades from accent color into the
-            card background, no hard color division. ═══ */}
-        <div style={{ borderRadius: '22px', overflow: 'hidden', border: '1px solid var(--app-border)', boxShadow: 'var(--shadow-card)' }}>
-          <div style={{
-            height: '96px',
-            background: 'linear-gradient(180deg, var(--app-accent) 0%, var(--card-bg) 100%)',
-          }} />
-          <div style={{ background: 'var(--card-bg)', padding: '0 18px 20px', textAlign: 'center', marginTop: '-48px' }}>
+        <div style={{
+          borderRadius: '22px', overflow: 'hidden', border: '1px solid var(--app-border)',
+          boxShadow: '0 10px 32px rgba(124,58,237,0.28)',
+          background: 'var(--card-bg)',
+        }}>
+          <div style={{ padding: '28px 18px 20px', textAlign: 'center' }}>
             <label style={{ position: 'relative', cursor: 'pointer', display: 'inline-block' }}>
               <motion.div
                 onClick={handleAvatarTap}
@@ -569,7 +510,6 @@ function Profile({ session, onBack }) {
                   <span style={{ color: 'var(--app-accent)', fontSize: '26px', fontWeight: 700 }}>{initials}</span>
                 )}
               </motion.div>
-              {/* Camera badge only appears while actively editing */}
               {editMode && (
                 <div style={{ position: 'absolute', right: '0', bottom: '2px', width: '26px', height: '26px', borderRadius: '9px', background: 'var(--app-accent)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--card-bg)' }}>
                   <Icon name="camera" size={13} />
@@ -580,8 +520,6 @@ function Profile({ session, onBack }) {
 
             {!editMode ? (
               <>
-                {/* Minimal read-only display: name (an admin's title stands
-                    in as their name here), then department. */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '10px' }}>
                   <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>
                     {displayName}
@@ -593,10 +531,6 @@ function Profile({ session, onBack }) {
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
                     {department}
                   </div>
-                )}
-
-                {bio && (
-                  <p style={{ margin: '10px 0 0', fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.55 }}>{bio}</p>
                 )}
 
                 <button
@@ -613,8 +547,6 @@ function Profile({ session, onBack }) {
                 </button>
               </>
             ) : (
-              // Students edit their full name here; admins skip this
-              // entirely since their Title field (below) is their name.
               !isAdmin && (
                 <div style={{ marginTop: '10px', textAlign: 'left' }}>
                   <label style={miniLabel}>Full Name</label>
@@ -625,9 +557,20 @@ function Profile({ session, onBack }) {
           </div>
         </div>
 
-        {/* ═══ EDIT FORM FIELDS — unchanged, still available while editing ═══ */}
         {editMode && (
           <>
+            {isAdmin && (
+              <div style={cardStyle}>
+                <div style={miniLabel}>Title</div>
+                <input
+                  value={adminTitle}
+                  onChange={e => setAdminTitle(e.target.value)}
+                  placeholder="e.g. HOD Electrical Engineering, Principal, SRC President"
+                  style={compactInput}
+                />
+              </div>
+            )}
+
             <div style={cardStyle}>
               <div style={miniLabel}>Department{isAdmin ? ' you represent' : ''}</div>
               <div style={{ position: 'relative' }}>
@@ -651,17 +594,7 @@ function Profile({ session, onBack }) {
               </div>
             </div>
 
-            {isAdmin ? (
-              <div style={cardStyle}>
-                <div style={miniLabel}>Title</div>
-                <input
-                  value={adminTitle}
-                  onChange={e => setAdminTitle(e.target.value)}
-                  placeholder="e.g. HOD Electrical Engineering, Principal, SRC President"
-                  style={compactInput}
-                />
-              </div>
-            ) : (
+            {!isAdmin && (
               <div style={cardStyle}>
                 <div style={miniLabel}>Year of Study</div>
                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -673,11 +606,6 @@ function Profile({ session, onBack }) {
                 </div>
               </div>
             )}
-
-            <div style={cardStyle}>
-              <div style={miniLabel}>Bio</div>
-              <textarea value={bio} onChange={e => setBio(e.target.value)} rows={2} placeholder="What are you looking for?" style={{ ...compactInput, resize: 'none', fontFamily: 'inherit' }} />
-            </div>
 
             <div style={cardStyle}>
               <div style={miniLabel}>Skills</div>
@@ -720,74 +648,39 @@ function Profile({ session, onBack }) {
                 )}
               </div>
             </div>
-
-            <div style={cardStyle}>
-              <div style={miniLabel}>WhatsApp Number</div>
-              <input type="tel" value={whatsapp} onChange={e => setWhatsapp(e.target.value.replace(/[^0-9+ ]/g, ''))} placeholder="e.g. +263 71 234 5678" style={compactInput} />
-              {whatsappDigits.length >= 6 && (
-                <a href={whatsappUrlFor(whatsappDigits)} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '6px', fontSize: '11.5px', fontWeight: 700, color: '#25D366', textDecoration: 'none' }}>
-                  <Icon name="whatsapp" size={12} color="#25D366" />
-                  Preview chat link
-                </a>
-              )}
-            </div>
-
-            <div style={cardStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: socialLinks.length || showAddLink ? '8px' : 0 }}>
-                <div style={miniLabel}>Social Links</div>
-                <div onClick={() => setShowAddLink(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--app-accent)', fontWeight: 700, fontSize: '11.5px', cursor: 'pointer' }}>
-                  <Icon name={showAddLink ? 'x' : 'plus'} size={11} />
-                  {showAddLink ? 'Cancel' : 'Add'}
-                </div>
-              </div>
-              {showAddLink && (
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                  <select value={newLinkPlatform} onChange={e => setNewLinkPlatform(e.target.value)} style={{ ...compactInput, width: 'auto' }}>
-                    {SOCIAL_PLATFORMS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
-                  <input value={newLinkUrl} onChange={e => setNewLinkUrl(e.target.value)} placeholder="URL" style={{ ...compactInput, flex: 1 }} />
-                  <button onClick={addSocialLink} style={{ padding: '0 14px', borderRadius: '10px', border: 'none', background: 'var(--app-accent)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Add</button>
-                </div>
-              )}
-              {socialLinks.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {socialLinks.map((link, idx) => (
-                    <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'var(--app-accent-soft)', borderRadius: '999px', padding: '5px 9px' }}>
-                      <Icon name={platformInfo(link.platform).icon} size={12} color="var(--app-accent)" />
-                      <span onClick={() => removeSocialLink(idx)} style={{ color: 'var(--danger)', cursor: 'pointer', fontWeight: 800, fontSize: '13px' }}>×</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </>
         )}
 
-        {/* ═══ PREFERENCES ═══ */}
-        <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '1.2px', color: 'var(--text-muted)', textTransform: 'uppercase', margin: '20px 4px 8px' }}>
-          Preferences
-        </div>
-        <div style={{ background: 'var(--card-bg)', borderRadius: '18px', border: '1px solid var(--app-border)', padding: '4px 14px' }}>
-          <SettingsRow icon="moon" label="Dark Mode" trailing={<Toggle checked={isDark} onChange={toggleTheme} />} />
-          <SettingsRow icon="info" label="About PolyNet" onClick={() => setInfoPage('about')} />
-          <SettingsRow icon="shield" label="Privacy Policy" onClick={() => setInfoPage('privacy')} />
-          <SettingsRow icon="phone" label="Contact PolyNet" onClick={() => setContactSheetOpen(true)} isLast />
-        </div>
+        {!editMode && (
+          <>
+            <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '1.2px', color: 'var(--text-muted)', textTransform: 'uppercase', margin: '20px 4px 8px' }}>
+              Preferences
+            </div>
+            <div style={{ background: 'var(--card-bg)', borderRadius: '18px', border: '1px solid var(--app-border)', padding: '4px 14px' }}>
+              <SettingsRow icon="moon" label="Dark Mode" trailing={<Toggle checked={isDark} onChange={toggleTheme} />} />
+              <SettingsRow icon="info" label="About PolyNet" onClick={() => setInfoPage('about')} />
+              <SettingsRow icon="shield" label="Privacy Policy" onClick={() => setInfoPage('privacy')} />
+              <SettingsRow icon="phone" label="Contact PolyNet" onClick={() => setContactSheetOpen(true)} isLast={!isFounder} />
+              {isFounder && (
+                <SettingsRow icon="flag" label="Reports" onClick={() => setShowReports(true)} isLast />
+              )}
+            </div>
 
-        <button
-          onClick={() => setConfirmModal('logout')}
-          style={{
-            width: '100%', padding: '13px', borderRadius: '14px',
-            border: '1px solid var(--danger)', background: 'transparent',
-            color: 'var(--danger)', fontWeight: 700, fontSize: '13.5px',
-            cursor: 'pointer', marginTop: '14px',
-          }}
-        >
-          Log Out
-        </button>
+            <button
+              onClick={() => setConfirmModal('logout')}
+              style={{
+                width: '100%', padding: '13px', borderRadius: '14px',
+                border: '1px solid var(--danger)', background: 'transparent',
+                color: 'var(--danger)', fontWeight: 700, fontSize: '13.5px',
+                cursor: 'pointer', marginTop: '14px',
+              }}
+            >
+              Log Out
+            </button>
+          </>
+        )}
       </div>
 
-      {/* ═══ BOTTOM SAVE FLOATING ACTION BAR ═══ */}
       {editMode && (
         <div style={{
           position: 'fixed', bottom: '70px', left: 0, right: 0,
@@ -813,7 +706,6 @@ function Profile({ session, onBack }) {
         </div>
       )}
 
-      {/* ═══ FULLSCREEN AVATAR VIEWER — tap the profile picture to maximize ═══ */}
       <AnimatePresence>
         {viewingAvatar && (
           <motion.div
@@ -863,14 +755,12 @@ function Profile({ session, onBack }) {
         )}
       </AnimatePresence>
 
-      {/* ═══ CONTACT SHEET ═══ */}
       <AnimatePresence>
         {contactSheetOpen && (
           <ContactSheet onClose={() => setContactSheetOpen(false)} />
         )}
       </AnimatePresence>
 
-      {/* ═══ CONFIRMATION MODALS ═══ */}
       {confirmModal === 'save' && (
         <ConfirmModal
           title="Save changes?"
