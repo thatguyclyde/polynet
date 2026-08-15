@@ -3,7 +3,7 @@ import {
   Check, X, Plus, Search, Home, User, Users, Heart, MessageCircle,
   Share2, Bookmark, Bell, Settings, LogOut, Trash2, Send, ImagePlus,
   MapPin, Calendar, ShoppingBag, Newspaper, Zap, Star, Flag,Handshake, ArrowLeftRight,
-  Globe, MessageSquare, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,ThumbsDown,
+  Globe, MessageSquare,Ban, Phone, Mail, Lock, Eye, EyeOff, ThumbsUp,ThumbsDown,
   MoreHorizontal, MoreVertical, ChevronLeft, ChevronDown, ChevronUp, TrendingUp,
   Filter, SlidersHorizontal, Store, UserCircle, Download, Inbox, BookOpen, GraduationCap,
   Megaphone, BadgeCheck, Shirt, Armchair, Wrench, Package, Link2
@@ -142,6 +142,8 @@ const ICONS = {
   exchange: ArrowLeftRight,
   globe: Globe,
   message: MessageSquare,
+  block: Ban,
+  ban: Ban,
   phone: Phone,
   mail: Mail,
   lock: Lock,

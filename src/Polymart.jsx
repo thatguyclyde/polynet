@@ -226,7 +226,7 @@ function InfoSheet({ title, body, onClose }) {
           onClick={onClose}
           style={{
             width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
-            background: FILTER_PURPLE_EDGE, color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+            background: FILTER_PURPLE_EDGE, color: '#f7f5f5f0', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
           }}
         >
           Got it
