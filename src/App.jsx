@@ -549,7 +549,7 @@ function App() {
           }
         `}</style>
 
-        <Suspense fallback={<div style={{minHeight: '100vh'}} /> }>
+        <Suspense fallback={<div style={{minHeight: '100vh', background: 'var(--page-bg)'}} /> }>
           {!hideChrome && (
           <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,

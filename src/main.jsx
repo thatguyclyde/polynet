@@ -8,7 +8,7 @@ const App = lazy(() => import('./App.jsx'))
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
-      <Suspense fallback={<div style={{ minHeight: '100vh' }} /> }>
+      <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--page-bg)' }} /> }>
         <App />
       </Suspense>
     </ThemeProvider>

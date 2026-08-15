@@ -692,14 +692,19 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 
     return (
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+        {/* Title on the left, "Back" as a plain text control on the right —
+            no arrow icon. */}
         <div style={{
           padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
           display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 10,
         }}>
-          <div onClick={() => { setSelectedListing(null); setOpeningChat(false) }} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
-            <Icon name="arrowLeft" size={20} />
+          <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-strong)', flex: 1 }}>Listing details</span>
+          <div
+            onClick={() => { setSelectedListing(null); setOpeningChat(false) }}
+            style={{ cursor: 'pointer', color: 'var(--app-accent)', fontWeight: 700, fontSize: '14px' }}
+          >
+            Back
           </div>
-          <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-strong)' }}>Listing details</span>
         </div>
 
         {/* Shared layoutId with the grid thumbnail below — this is what
@@ -1015,10 +1020,12 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                     style={{ ...composerInput, resize: 'none', fontFamily: 'inherit' }}
                   />
 
-                  {/* Category chips — even 3-column grid so they fully fill
-                      the composer width, instead of flex-wrap pills that
-                      bunch to the left with leftover space on the right. */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
+                  {/* Category grid — fixed-height cells with the icon
+                      stacked above the label and centered, instead of a
+                      side-by-side flex row whose label could wrap and
+                      throw cell heights out of alignment. Every cell is
+                      now visually identical regardless of label length. */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
                     {CATEGORIES.filter(c => c.id !== 'all').map(cat => {
                       const isSelected = category === cat.id
                       return (
@@ -1026,15 +1033,19 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                           key={cat.id}
                           onClick={() => setCategory(cat.id)}
                           style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                            padding: '9px 6px', borderRadius: '12px', fontSize: '11.5px', fontWeight: 600,
-                            cursor: 'pointer', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                            height: '64px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                            cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box', padding: '0 4px',
                             background: isSelected ? 'var(--app-accent)' : 'var(--app-accent-soft)',
                             color: isSelected ? '#fff' : 'var(--app-accent)',
+                            border: isSelected ? '1.5px solid var(--app-accent)' : '1.5px solid transparent',
+                            transition: 'background 0.15s, border-color 0.15s',
                           }}
                         >
-                          <Icon name={cat.icon} size={13} color={isSelected ? '#fff' : 'var(--app-accent)'} />
-                          {cat.label}
+                          <Icon name={cat.icon} size={16} color={isSelected ? '#fff' : 'var(--app-accent)'} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                            {cat.label}
+                          </span>
                         </div>
                       )
                     })}
@@ -1150,13 +1161,13 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
               onClick={() => setShowMyListings(true)}
               style={{
                 flex: 1, minWidth: 0, padding: '0 6px', borderRadius: '12px', border: 'none',
-                background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '11px',
+                background: FILTER_PURPLE_EDGE, fontWeight: 700, fontSize: '11px',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                boxShadow: 'var(--shadow-accent)', whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.15,
+                whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.15, boxShadow: 'var(--shadow-accent)',
               }}
             >
-              <Icon name="package" size={12} color="#fff" style={{ flexShrink: 0 }} />
-              <span style={{ overflowWrap: 'break-word' }}>My Listings</span>
+              <Icon name="shoppingBag" size={12} color="#fff" style={{ flexShrink: 0 }} />
+              <span style={{ overflowWrap: 'break-word', color: '#fff' }}>My Listings</span>
             </button>
           </div>
 

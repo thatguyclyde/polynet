@@ -14,11 +14,11 @@ export default function LoadingScreen({ message = "Loading PolyNet...", fullScre
     position: 'fixed',
     inset: 0,
     zIndex: 999,
-    background: '#ffffff',
+    background: 'var(--page-bg)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     padding: '24px',
   } : {
@@ -27,9 +27,10 @@ export default function LoadingScreen({ message = "Loading PolyNet...", fullScre
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     padding: '24px',
+    background: 'var(--page-bg)'
   }
 
   return (
@@ -113,7 +114,7 @@ export default function LoadingScreen({ message = "Loading PolyNet...", fullScre
             margin: 0,
             fontSize: '13px',
             fontWeight: 600,
-            color: '#64748B',
+            color: 'var(--text-muted)',
             letterSpacing: '0.2px',
             textAlign: 'center',
           }}
