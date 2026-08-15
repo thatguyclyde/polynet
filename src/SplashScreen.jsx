@@ -21,31 +21,18 @@ function SplashScreen({ onDone }) {
       justifyContent: 'center',
       position: 'relative',
     }}>
-      <div style={{
-        width: '60px',
-        height: '60px',
-        borderRadius: '50%',
-        // Inverted from a "light logo card" look — dark circle in light
-        // mode, white circle in dark mode.
-        background: isDark ? '#FFFFFF' : '#1A1A22',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: isDark
-          ? '0 6px 20px rgba(124,58,237,0.22)'
-          : '0 6px 20px rgba(124,58,237,0.30)',
-        animation: 'splashPop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1)',
-      }}>
-        <img
-          src="/logo.png"
-          alt="PolyNet"
-          style={{
-            width: '44px',
-            height: 'auto',
-            display: 'block',
-          }}
-        />
-      </div>
+      {/* Logo manifests once, then stays still — no ongoing glow/motion
+          after the initial entrance. */}
+      <img
+        src="/logo.png"
+        alt="PolyNet"
+        style={{
+          width: '64px',
+          height: 'auto',
+          display: 'block',
+          animation: 'logoManifest 0.85s cubic-bezier(0.22, 1, 0.36, 1) both',
+        }}
+      />
 
       <div style={{
         position: 'absolute',
@@ -64,8 +51,8 @@ function SplashScreen({ onDone }) {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,700&display=swap');
 
-        @keyframes splashPop {
-          0%   { opacity: 0; transform: scale(0.7); }
+        @keyframes logoManifest {
+          0%   { opacity: 0; transform: scale(0.55); }
           100% { opacity: 1; transform: scale(1); }
         }
         @keyframes splashFadeIn {
