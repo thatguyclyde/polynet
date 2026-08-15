@@ -4,11 +4,14 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
 import { getDisplayName } from './DisplayName'
+import PublicProfileCard from './PublicProfileCard'
 
 const FILTER_ACTIVE_BG = '#FFFFFF'
 const FILTER_ACTIVE_TEXT = '#1A1A2E'
 const FILTER_PURPLE_EDGE = '#7C3AED'
 const VERIFIED_BLUE = '#1D9BF0'
+const MAX_LISTING_IMAGES = 3
+const PRESS_MOVE_CANCEL_PX = 10 // finger movement beyond this cancels the pending long-press
 
 const REPORT_REASONS = [
   'Prohibited or illegal item',
@@ -73,6 +76,15 @@ const CATEGORIES = [
 
 function categoryIcon(id) {
   return CATEGORIES.find(c => c.id === id)?.icon || 'package'
+}
+
+// Single source of truth for "what images does this listing have" — prefers
+// the new image_urls array, falls back to the old single image_url column
+// for listings created before multi-image support existed.
+function getListingImages(listing) {
+  if (listing?.image_urls && listing.image_urls.length > 0) return listing.image_urls
+  if (listing?.image_url) return [listing.image_url]
+  return []
 }
 
 function VerifiedBadge({ size = 13 }) {
@@ -242,7 +254,7 @@ function MyListingsSheet({ session, onClose, onListingRemoved }) {
     setLoading(true)
     const { data, error } = await supabase
       .from('marketplace_listings')
-      .select('id, title, price, category, image_url, created_at')
+      .select('id, title, price, category, image_url, image_urls, created_at')
       .eq('seller_id', session.user.id)
       .eq('sold', false)
       .order('created_at', { ascending: false })
@@ -324,44 +336,47 @@ function MyListingsSheet({ session, onClose, onListingRemoved }) {
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                {listings.map(l => (
-                  <div key={l.id}>
-                    <div style={{
-                      background: 'var(--page-bg)', borderRadius: '16px', overflow: 'hidden',
-                      border: '1px solid var(--app-border)',
-                    }}>
-                      {l.image_url ? (
-                        <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '100px', objectFit: 'cover', display: 'block' }} />
-                      ) : (
-                        <div style={{ width: '100%', height: '100px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Icon name={categoryIcon(l.category)} size={24} color="var(--app-accent)" />
-                        </div>
-                      )}
-                      <div style={{ padding: '9px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--app-accent)' }}>
-                          ${Number(l.price).toFixed(2)}
-                        </div>
-                        <div style={{
-                          fontSize: '12px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>
-                          {l.title}
+                {listings.map(l => {
+                  const thumb = getListingImages(l)[0]
+                  return (
+                    <div key={l.id}>
+                      <div style={{
+                        background: 'var(--page-bg)', borderRadius: '16px', overflow: 'hidden',
+                        border: '1px solid var(--app-border)',
+                      }}>
+                        {thumb ? (
+                          <img src={thumb} alt={l.title} style={{ width: '100%', height: '100px', objectFit: 'cover', display: 'block' }} />
+                        ) : (
+                          <div style={{ width: '100%', height: '100px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Icon name={categoryIcon(l.category)} size={24} color="var(--app-accent)" />
+                          </div>
+                        )}
+                        <div style={{ padding: '9px' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--app-accent)' }}>
+                            ${Number(l.price).toFixed(2)}
+                          </div>
+                          <div style={{
+                            fontSize: '12px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {l.title}
+                          </div>
                         </div>
                       </div>
+                      <button
+                        onClick={() => setConfirmSoldId(l.id)}
+                        disabled={removingId === l.id}
+                        style={{
+                          width: '100%', marginTop: '6px', padding: '8px', borderRadius: '10px',
+                          border: 'none', background: 'var(--danger)', color: '#fff',
+                          fontWeight: 700, fontSize: '12px', cursor: 'pointer',
+                        }}
+                      >
+                        {removingId === l.id ? 'Marking...' : 'Sold'}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => setConfirmSoldId(l.id)}
-                      disabled={removingId === l.id}
-                      style={{
-                        width: '100%', marginTop: '6px', padding: '8px', borderRadius: '10px',
-                        border: 'none', background: 'var(--danger)', color: '#fff',
-                        fontWeight: 700, fontSize: '12px', cursor: 'pointer',
-                      }}
-                    >
-                      {removingId === l.id ? 'Marking...' : 'Sold'}
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -399,16 +414,25 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   const [price, setPrice] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('electronics')
-  const [imageFile, setImageFile] = useState(null)
-  const [imagePreview, setImagePreview] = useState(null)
+  const [imageFiles, setImageFiles] = useState([]) // up to MAX_LISTING_IMAGES compressed blobs
+  const [imagePreviews, setImagePreviews] = useState([]) // matching object URLs
   const [posting, setPosting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  // Long-press-to-report — same pattern as the Inbox rows in Chats.jsx.
+  // Detail-view image carousel + fullscreen viewer
+  const [imageIndex, setImageIndex] = useState(0)
+  const [viewingImage, setViewingImage] = useState(false)
+  const [viewingProfileId, setViewingProfileId] = useState(null)
+
+  // Long-press-to-report, now movement-aware: a finger that's actively
+  // scrolling (moved beyond PRESS_MOVE_CANCEL_PX before the hold timer
+  // fires) cancels the pending report trigger entirely — only a genuinely
+  // steady press-and-hold opens the report sheet.
   const [reportTarget, setReportTarget] = useState(null)
   const [reportedNotice, setReportedNotice] = useState(false)
   const pressTimer = useRef(null)
+  const pressStartPos = useRef({ x: 0, y: 0 })
   const longPressTriggered = useRef(false)
 
   useEffect(() => {
@@ -422,11 +446,17 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     return () => onListingOpenChange?.(false)
   }, [selectedListing])
 
+  // Reset the carousel/viewer whenever a different listing is opened.
+  useEffect(() => {
+    setImageIndex(0)
+    setViewingImage(false)
+  }, [selectedListing?.id])
+
   async function fetchListings() {
     setLoading(true)
     const { data, error } = await supabase
       .from('marketplace_listings')
-      .select('id, title, description, price, category, image_url, created_at, seller_id, profiles(full_name, department, avatar_url, is_admin, admin_title)')
+      .select('id, title, description, price, category, image_url, image_urls, created_at, seller_id, profiles(full_name, department, avatar_url, is_admin, admin_title)')
       .eq('sold', false)
       .order('created_at', { ascending: false })
     if (error) console.error('Fetch error:', error.message)
@@ -435,19 +465,34 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   }
 
   async function handleImageSelect(e) {
-    const file = e.target.files[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
     setErrorMsg('')
+
+    const remainingSlots = MAX_LISTING_IMAGES - imageFiles.length
+    const toProcess = files.slice(0, remainingSlots)
+    if (toProcess.length === 0) {
+      e.target.value = ''
+      return
+    }
+
     setUploading(true)
     try {
-      const compressed = await compressImage(file)
-      setImageFile(compressed)
-      setImagePreview(URL.createObjectURL(compressed))
+      const compressedList = await Promise.all(toProcess.map(f => compressImage(f)))
+      const previews = compressedList.map(b => URL.createObjectURL(b))
+      setImageFiles(prev => [...prev, ...compressedList])
+      setImagePreviews(prev => [...prev, ...previews])
     } catch (err) {
-      setErrorMsg('Could not process that image. Try a different one.')
+      setErrorMsg('Could not process one of those images. Try different ones.')
       console.error('Compression error:', err)
     }
     setUploading(false)
+    e.target.value = '' // allow re-selecting the same file(s) later
+  }
+
+  function removeImageAt(idx) {
+    setImageFiles(prev => prev.filter((_, i) => i !== idx))
+    setImagePreviews(prev => prev.filter((_, i) => i !== idx))
   }
 
   async function handlePost() {
@@ -455,12 +500,12 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     setPosting(true)
     setErrorMsg('')
 
-    let imageUrl = null
-    if (imageFile) {
-      const fileName = `${session.user.id}/${Date.now()}.jpg`
+    const uploadedUrls = []
+    for (let i = 0; i < imageFiles.length; i++) {
+      const fileName = `${session.user.id}/${Date.now()}_${i}.jpg`
       const { error: uploadErr } = await supabase.storage
         .from('marketplace-images')
-        .upload(fileName, imageFile, { contentType: 'image/jpeg' })
+        .upload(fileName, imageFiles[i], { contentType: 'image/jpeg' })
 
       if (uploadErr) {
         setErrorMsg(`Image upload failed: ${uploadErr.message}`)
@@ -471,7 +516,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       const { data: urlData } = supabase.storage
         .from('marketplace-images')
         .getPublicUrl(fileName)
-      imageUrl = urlData.publicUrl
+      uploadedUrls.push(urlData.publicUrl)
     }
 
     const { error } = await supabase.from('marketplace_listings').insert({
@@ -480,7 +525,8 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       description,
       price: parseFloat(price),
       category,
-      image_url: imageUrl,
+      image_url: uploadedUrls[0] || null,
+      image_urls: uploadedUrls.length > 0 ? uploadedUrls : null,
       sold: false,
     })
 
@@ -507,8 +553,8 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     setPrice('')
     setDescription('')
     setCategory('electronics')
-    setImageFile(null)
-    setImagePreview(null)
+    setImageFiles([])
+    setImagePreviews([])
     setErrorMsg('')
   }
 
@@ -530,15 +576,34 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
         sellerId: selectedListing.seller_id,
         listingTitle: selectedListing.title,
         sellerName: getDisplayName(selectedListing.profiles),
-        listingImage: selectedListing.image_url || null,
+        listingImage: getListingImages(selectedListing)[0] || null,
         sellerAvatar: selectedListing.profiles?.avatar_url || null,
       })
     }, 300)
   }
 
+  // Opened via tapping the seller's avatar on the detail page.
+  function handleMessageFromProfile({ id, name, avatar }) {
+    setViewingProfileId(null)
+    onMessageSeller?.({
+      listingId: null,
+      sellerId: id,
+      listingTitle: null,
+      sellerName: name,
+      listingImage: null,
+      sellerAvatar: avatar,
+    })
+  }
+
   // ── Long-press-to-report on grid cards ─────────────────────────────
-  function handlePressStart(listing) {
+  function getPoint(e) {
+    if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    return { x: e.clientX, y: e.clientY }
+  }
+
+  function handlePressStart(listing, e) {
     longPressTriggered.current = false
+    pressStartPos.current = getPoint(e)
     pressTimer.current = setTimeout(() => {
       longPressTriggered.current = true
       if (navigator.vibrate) navigator.vibrate(10)
@@ -546,8 +611,23 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
     }, 480)
   }
 
+  // Cancels the pending report trigger the moment the finger drifts beyond
+  // a small threshold — this is what stops a scroll gesture from
+  // accidentally opening the report sheet.
+  function handlePressMove(e) {
+    if (!pressTimer.current) return
+    const p = getPoint(e)
+    const dx = Math.abs(p.x - pressStartPos.current.x)
+    const dy = Math.abs(p.y - pressStartPos.current.y)
+    if (dx > PRESS_MOVE_CANCEL_PX || dy > PRESS_MOVE_CANCEL_PX) {
+      clearTimeout(pressTimer.current)
+      pressTimer.current = null
+    }
+  }
+
   function handlePressEnd() {
     clearTimeout(pressTimer.current)
+    pressTimer.current = null
   }
 
   function handleCardClick(listing) {
@@ -607,6 +687,9 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 
   if (selectedListing) {
     const l = selectedListing
+    const images = getListingImages(l)
+    const hasMultiple = images.length > 1
+
     return (
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
         <div style={{
@@ -620,18 +703,61 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
         </div>
 
         {/* Shared layoutId with the grid thumbnail below — this is what
-            drives the zoom-in transition from card to full detail view. */}
+            drives the zoom-in transition from card to full detail view.
+            Tapping the image itself maximizes it; the arrows (when there's
+            more than one photo) stop propagation so they navigate instead
+            of triggering the maximize. */}
         <motion.div
           layoutId={`listing-visual-${l.id}`}
           transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-          style={{ width: '100%', height: '260px', position: 'relative', overflow: 'hidden' }}
+          onClick={() => images.length > 0 && setViewingImage(true)}
+          style={{ width: '100%', height: '260px', position: 'relative', overflow: 'hidden', cursor: images.length > 0 ? 'pointer' : 'default' }}
         >
-          {l.image_url ? (
-            <img src={l.image_url} alt={l.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              onError={(e) => { e.target.style.display = 'none' }} />
+          {images.length > 0 ? (
+            <img
+              src={images[imageIndex]}
+              alt={l.title}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              onError={(e) => { e.target.style.display = 'none' }}
+            />
           ) : (
             <div style={{ width: '100%', height: '100%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name={categoryIcon(l.category)} size={44} color="var(--app-accent)" />
+            </div>
+          )}
+
+          {hasMultiple && imageIndex > 0 && (
+            <div
+              onClick={(e) => { e.stopPropagation(); setImageIndex(i => i - 1) }}
+              style={{
+                position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)',
+                width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(0,0,0,0.45)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              }}
+            >
+              <Icon name="chevronLeft" size={18} color="#fff" />
+            </div>
+          )}
+          {hasMultiple && imageIndex < images.length - 1 && (
+            <div
+              onClick={(e) => { e.stopPropagation(); setImageIndex(i => i + 1) }}
+              style={{
+                position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(0,0,0,0.45)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              }}
+            >
+              <Icon name="chevronRight" size={18} color="#fff" />
+            </div>
+          )}
+          {hasMultiple && (
+            <div style={{ position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '4px' }}>
+              {images.map((_, i) => (
+                <div key={i} style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: i === imageIndex ? '#fff' : 'rgba(255,255,255,0.45)',
+                }} />
+              ))}
             </div>
           )}
         </motion.div>
@@ -647,14 +773,21 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
           </div>
           <h2 style={{ margin: '0 0 12px', fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'left', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{l.title}</h2>
 
-          {/* Seller row — left-aligned, wraps safely if the name is long */}
+          {/* Seller row — avatar now opens the public profile card */}
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '18px', textAlign: 'left' }}>
-            <div style={{
-              width: '36px', height: '36px', borderRadius: '10px', background: 'var(--app-accent-soft)',
-              color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              {getDisplayName(l.profiles, 'S').split(' ').map(n => n[0]).slice(0, 2).join('')}
+            <div
+              onClick={() => setViewingProfileId(l.seller_id)}
+              style={{
+                width: '36px', height: '36px', borderRadius: '10px', overflow: 'hidden',
+                background: 'var(--app-accent-soft)', color: 'var(--app-accent)', fontWeight: 700, fontSize: '13px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer',
+              }}
+            >
+              {l.profiles?.avatar_url ? (
+                <img src={l.profiles.avatar_url} alt={getDisplayName(l.profiles)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                getDisplayName(l.profiles, 'S').split(' ').map(n => n[0]).slice(0, 2).join('')
+              )}
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', wordBreak: 'break-word' }}>
@@ -690,6 +823,78 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
             {openingChat ? 'Opening chat...' : 'Message Seller'}
           </button>
         </motion.div>
+
+        {/* Fullscreen maximized image viewer */}
+        <AnimatePresence>
+          {viewingImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setViewingImage(false)}
+              style={{
+                position: 'fixed', inset: 0, zIndex: 300,
+                background: 'rgba(10,10,14,0.97)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <img
+                src={images[imageIndex]}
+                alt={l.title}
+                onClick={(e) => e.stopPropagation()}
+                style={{ width: '100%', maxHeight: '100vh', objectFit: 'contain' }}
+              />
+
+              {hasMultiple && imageIndex > 0 && (
+                <div
+                  onClick={(e) => { e.stopPropagation(); setImageIndex(i => i - 1) }}
+                  style={{
+                    position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)',
+                    width: '40px', height: '40px', borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  }}
+                >
+                  <Icon name="chevronLeft" size={20} color="#fff" />
+                </div>
+              )}
+              {hasMultiple && imageIndex < images.length - 1 && (
+                <div
+                  onClick={(e) => { e.stopPropagation(); setImageIndex(i => i + 1) }}
+                  style={{
+                    position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)',
+                    width: '40px', height: '40px', borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  }}
+                >
+                  <Icon name="chevronRight" size={20} color="#fff" />
+                </div>
+              )}
+
+              <div
+                onClick={() => setViewingImage(false)}
+                style={{
+                  position: 'absolute', top: '16px', right: '16px',
+                  width: '38px', height: '38px', borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(6px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                }}
+              >
+                <Icon name="x" size={19} color="#fff" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {viewingProfileId && (
+          <PublicProfileCard
+            userId={viewingProfileId}
+            session={session}
+            onClose={() => setViewingProfileId(null)}
+            onMessage={handleMessageFromProfile}
+          />
+        )}
       </div>
     )
   }
@@ -835,33 +1040,53 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                     })}
                   </div>
 
-                  {imagePreview && (
-                    <div style={{ position: 'relative', marginBottom: '10px' }}>
-                      <img src={imagePreview} alt="preview" style={{
-                        width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '12px',
-                      }} />
-                      <div
-                        onClick={() => { setImageFile(null); setImagePreview(null) }}
-                        style={{
-                          position: 'absolute', top: '8px', right: '8px',
-                          width: '26px', height: '26px', borderRadius: '50%',
-                          background: 'rgba(0,0,0,0.6)', color: '#fff',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Icon name="x" size={14} color="#fff" />
-                      </div>
+                  {/* Up to 3 photos, optional — each preview removable individually */}
+                  {imagePreviews.length > 0 && (
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                      {imagePreviews.map((src, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            position: 'relative',
+                            width: imagePreviews.length === 1 ? '100%' : 'calc(33.33% - 6px)',
+                            height: imagePreviews.length === 1 ? '160px' : '90px',
+                          }}
+                        >
+                          <img src={src} alt={`preview ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }} />
+                          <div
+                            onClick={() => removeImageAt(idx)}
+                            style={{
+                              position: 'absolute', top: '6px', right: '6px', width: '22px', height: '22px',
+                              borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                            }}
+                          >
+                            <Icon name="x" size={12} color="#fff" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
 
                   <label style={{
-                    display: 'inline-flex', width: '32px', height: '32px', borderRadius: '10px',
-                    background: 'var(--app-accent-soft)', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', marginBottom: '12px',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 12px', borderRadius: '10px',
+                    background: imagePreviews.length >= MAX_LISTING_IMAGES ? 'var(--app-border-soft)' : 'var(--app-accent-soft)',
+                    cursor: imagePreviews.length >= MAX_LISTING_IMAGES ? 'default' : 'pointer',
+                    marginBottom: '12px',
                   }}>
-                    <Icon name="camera" size={16} color="var(--app-accent)" />
-                    <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display: 'none' }} />
+                    <Icon name="camera" size={16} color={imagePreviews.length >= MAX_LISTING_IMAGES ? 'var(--text-muted)' : 'var(--app-accent)'} />
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: imagePreviews.length >= MAX_LISTING_IMAGES ? 'var(--text-muted)' : 'var(--app-accent)' }}>
+                      {imagePreviews.length}/{MAX_LISTING_IMAGES} photos
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageSelect}
+                      disabled={imagePreviews.length >= MAX_LISTING_IMAGES}
+                      style={{ display: 'none' }}
+                    />
                   </label>
 
                   {errorMsg && (
@@ -881,7 +1106,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                       marginBottom: '4px',
                     }}
                   >
-                    {uploading ? 'Processing image...' : posting ? 'Listing...' : 'List Item'}
+                    {uploading ? 'Processing images...' : posting ? 'Listing...' : 'List Item'}
                   </button>
                 </div>
               </motion.div>
@@ -972,61 +1197,66 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
           padding: '16px 20px', display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px',
         }}>
-          {filtered.map(l => (
-            <div
-              key={l.id}
-              onClick={() => handleCardClick(l)}
-              onMouseDown={() => handlePressStart(l)}
-              onMouseUp={handlePressEnd}
-              onMouseLeave={handlePressEnd}
-              onTouchStart={() => handlePressStart(l)}
-              onTouchEnd={handlePressEnd}
-              style={{
-                background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
-                border: '1px solid var(--app-border)', cursor: 'pointer',
-                boxShadow: 'var(--shadow-card)',
-                userSelect: 'none', WebkitUserSelect: 'none',
-              }}
-            >
-              {/* Shared layoutId with the detail page's hero image — this
-                  drives the zoom-in transition on tap. */}
-              <motion.div layoutId={`listing-visual-${l.id}`} style={{ position: 'relative', width: '100%', height: '120px', overflow: 'hidden' }}>
-                {l.image_url ? (
-                  <img
-                    src={l.image_url}
-                    alt={l.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    onError={(e) => {
-                      e.target.style.display = 'none'
-                      e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
-                    }}
-                  />
-                ) : null}
-                <div className="fallback-icon" style={{
-                  width: '100%', height: '100%', background: 'var(--app-accent-soft)',
-                  display: l.image_url ? 'none' : 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  position: 'absolute', inset: 0,
-                }}>
-                  <Icon name={categoryIcon(l.category)} size={28} color="var(--app-accent)" />
-                </div>
-              </motion.div>
-              <div style={{ padding: '10px' }}>
-                <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
-                  ${Number(l.price).toFixed(2)}
-                </div>
-                <div style={{
-                  fontSize: '12.5px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {l.title}
-                </div>
-                <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {timeAgo(l.created_at)}
+          {filtered.map(l => {
+            const thumb = getListingImages(l)[0]
+            return (
+              <div
+                key={l.id}
+                onClick={() => handleCardClick(l)}
+                onMouseDown={(e) => handlePressStart(l, e)}
+                onMouseMove={handlePressMove}
+                onMouseUp={handlePressEnd}
+                onMouseLeave={handlePressEnd}
+                onTouchStart={(e) => handlePressStart(l, e)}
+                onTouchMove={handlePressMove}
+                onTouchEnd={handlePressEnd}
+                style={{
+                  background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
+                  border: '1px solid var(--app-border)', cursor: 'pointer',
+                  boxShadow: 'var(--shadow-card)',
+                  userSelect: 'none', WebkitUserSelect: 'none',
+                }}
+              >
+                {/* Shared layoutId with the detail page's hero image — this
+                    drives the zoom-in transition on tap. */}
+                <motion.div layoutId={`listing-visual-${l.id}`} style={{ position: 'relative', width: '100%', height: '120px', overflow: 'hidden' }}>
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt={l.title}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      onError={(e) => {
+                        e.target.style.display = 'none'
+                        e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
+                      }}
+                    />
+                  ) : null}
+                  <div className="fallback-icon" style={{
+                    width: '100%', height: '100%', background: 'var(--app-accent-soft)',
+                    display: thumb ? 'none' : 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    position: 'absolute', inset: 0,
+                  }}>
+                    <Icon name={categoryIcon(l.category)} size={28} color="var(--app-accent)" />
+                  </div>
+                </motion.div>
+                <div style={{ padding: '10px' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
+                    ${Number(l.price).toFixed(2)}
+                  </div>
+                  <div style={{
+                    fontSize: '12.5px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {l.title}
+                  </div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    {timeAgo(l.created_at)}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <div style={{ height: '20px' }} />
