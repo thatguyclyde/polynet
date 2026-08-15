@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Newspaper, Store, MessageCircle, UserCircle, WifiOff } from 'lucide-react'
 import { supabase } from './supabase'
+import { isExpiredAuthError, recoverExpiredSession } from './authRecovery'
 import SplashScreen from './SplashScreen'
 import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
@@ -162,8 +163,9 @@ function App() {
   const [chatThreadOpen, setChatThreadOpen] = useState(false)
   const [listingDetailOpen, setListingDetailOpen] = useState(false)
 
-  const [hasUnreadChats, setHasUnreadChats] = useState(false)
-  const [hasUnreadNews, setHasUnreadNews] = useState(false)
+  // Now real counts, not booleans — drives the numbered badge on each tab.
+  const [unreadChatsCount, setUnreadChatsCount] = useState(0)
+  const [unreadNewsCount, setUnreadNewsCount] = useState(0)
 
   // Tracks scroll position of the currently-active page's scroll container.
   // Only Feed actually uses this (for its collapsing header), but it's
@@ -214,6 +216,18 @@ function App() {
       setHasSeenWalkthrough(!!data?.has_seen_walkthrough)
       if (data?.avatar_url) setMyAvatar(data.avatar_url)
     } catch (err) {
+      if (isExpiredAuthError(err)) {
+        console.warn('Detected expired Supabase session; clearing it and returning to auth.')
+        await recoverExpiredSession(supabase)
+        setSession(null)
+        setOnboarded(null)
+        setIsAdminUser(false)
+        setHasSeenWalkthrough(true)
+        setNetworkError(false)
+        setChecking(false)
+        return
+      }
+
       // A genuine failure (no connection, DNS, etc.) — do NOT assume
       // "not onboarded". Surface a real network error screen instead.
       console.error('Error fetching profile:', err)
@@ -268,7 +282,20 @@ function App() {
 
     try {
       const { data: { session: freshSession }, error } = await supabase.auth.getSession()
-      if (error) throw error
+      if (error) {
+        if (isExpiredAuthError(error)) {
+          await recoverExpiredSession(supabase)
+          setSession(null)
+          setOnboarded(null)
+          setIsAdminUser(false)
+          setHasSeenWalkthrough(true)
+          setNetworkError(false)
+          setChecking(false)
+          setRetrying(false)
+          return
+        }
+        throw error
+      }
 
       if (!freshSession && hadSessionBefore) {
         // We had a session before this error — a null result now almost
@@ -370,53 +397,76 @@ function App() {
   useEffect(() => {
     if (!session) return
 
+    // Counts conversations that are genuinely unread (one per conversation,
+    // not per individual message — matches the data actually tracked:
+    // buyer_last_read_at / seller_last_read_at per thread).
     async function checkUnreadChats() {
       const { data, error } = await supabase
         .from('conversations')
         .select('buyer_id, seller_id, last_message_at, last_sender_id, buyer_last_read_at, seller_last_read_at')
         .or(`buyer_id.eq.${session.user.id},seller_id.eq.${session.user.id}`)
       if (error) {
+        if (isExpiredAuthError(error)) {
+          await recoverExpiredSession(supabase)
+          setSession(null)
+          return
+        }
         console.error('Error checking unread chats:', error.message)
         return
       }
       const myId = session.user.id
-      const anyUnread = (data || []).some(c => {
+      const unreadCount = (data || []).filter(c => {
         if (c.buyer_id === c.seller_id) return false
         if (!c.last_message_at || !c.last_sender_id || c.last_sender_id === myId) return false
         const myLastRead = myId === c.buyer_id ? c.buyer_last_read_at : c.seller_last_read_at
         if (!myLastRead) return true
         return new Date(c.last_message_at) > new Date(myLastRead)
-      })
-      setHasUnreadChats(anyUnread)
+      }).length
+      setUnreadChatsCount(unreadCount)
     }
 
+    // Counts news articles newer than the person's last visit to News,
+    // excluding their own posts. If they've never visited News at all
+    // (no read-state row yet), treat that as zero unread — matches
+    // News.jsx's own "null threshold = nothing is new yet" behavior,
+    // rather than flooding them with a huge number on first-ever load.
     async function checkUnreadNews() {
-      const [latestRes, readRes] = await Promise.all([
-        supabase.from('news_articles')
-          .select('created_at')
-          .neq('author_id', session.user.id) // ignore your own posts — those aren't "unread" for you
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase.from('news_reads').select('last_read_at').eq('user_id', session.user.id).maybeSingle(),
-      ])
-
-      if (latestRes.error) {
-        console.error('Error checking unread news (latest article):', latestRes.error.message)
-        return
-      }
-      if (readRes.error) {
-        console.error('Error checking unread news (read state):', readRes.error.message)
+      const { data: readState, error: readErr } = await supabase
+        .from('news_reads')
+        .select('last_read_at')
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+      if (readErr) {
+        if (isExpiredAuthError(readErr)) {
+          await recoverExpiredSession(supabase)
+          setSession(null)
+          return
+        }
+        console.error('Error checking unread news (read state):', readErr.message)
         return
       }
 
-      const latestOther = latestRes.data
-      if (!latestOther) {
-        setHasUnreadNews(false)
+      const lastRead = readState?.last_read_at
+      if (!lastRead) {
+        setUnreadNewsCount(0)
         return
       }
-      const lastRead = readRes.data?.last_read_at
-      setHasUnreadNews(!lastRead || new Date(latestOther.created_at) > new Date(lastRead))
+
+      const { count, error: countErr } = await supabase
+        .from('news_articles')
+        .select('id', { count: 'exact', head: true })
+        .neq('author_id', session.user.id)
+        .gt('created_at', lastRead)
+      if (countErr) {
+        if (isExpiredAuthError(countErr)) {
+          await recoverExpiredSession(supabase)
+          setSession(null)
+          return
+        }
+        console.error('Error checking unread news (count):', countErr.message)
+        return
+      }
+      setUnreadNewsCount(count || 0)
     }
 
     checkUnreadChats()
@@ -433,13 +483,20 @@ function App() {
     setPage(targetId)
   }
 
+  // WhatsApp-style swipe: either a longer drag OR a fast flick triggers the
+  // switch — matching just one of the two is enough, rather than requiring
+  // a full 90px drag every time regardless of how quickly it happened.
   function handleDragEnd(event, info) {
-    const threshold = 90
+    const distanceThreshold = 50
+    const velocityThreshold = 500 // px/s — a quick flick counts even if short
     const currentIndex = TABS.findIndex(t => t.id === page)
 
-    if (info.offset.x < -threshold && currentIndex < TABS.length - 1) {
+    const flickedNext = info.offset.x < -distanceThreshold || info.velocity.x < -velocityThreshold
+    const flickedPrev = info.offset.x > distanceThreshold || info.velocity.x > velocityThreshold
+
+    if (flickedNext && currentIndex < TABS.length - 1) {
       setPage(TABS[currentIndex + 1].id)
-    } else if (info.offset.x > threshold && currentIndex > 0) {
+    } else if (flickedPrev && currentIndex > 0) {
       setPage(TABS[currentIndex - 1].id)
     }
   }
@@ -525,7 +582,7 @@ function App() {
             key={page}
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.65}
+            dragElastic={0.5}
             onDragEnd={handleDragEnd}
             onScroll={handleContentScroll}
             animate={{ x: 0 }}
@@ -555,9 +612,7 @@ function App() {
         </div>
         </Suspense>
 
-        {/* Bottom tab bar — reduced height (just enough for icon + label),
-            and the old sliding purple indicator line above the active tab
-            has been removed entirely. */}
+        {/* Bottom tab bar — numbered badges instead of plain dots. */}
         {!hideChrome && (
           <div style={{
             position: 'fixed',
@@ -572,7 +627,7 @@ function App() {
             {TABS.map(tab => {
               const isActive = page === tab.id
               const IconComponent = tab.icon
-              const showDot = (tab.id === 'chats' && hasUnreadChats) || (tab.id === 'news' && hasUnreadNews)
+              const badgeCount = tab.id === 'chats' ? unreadChatsCount : tab.id === 'news' ? unreadNewsCount : 0
               return (
                 <motion.div
                   key={tab.id}
@@ -590,12 +645,18 @@ function App() {
                       color={isActive ? 'var(--text-strong)' : 'var(--text-muted)'}
                       style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s, color 0.2s' }}
                     />
-                    {showDot && (
+                    {badgeCount > 0 && (
                       <div style={{
-                        position: 'absolute', top: '-2px', right: '-4px',
-                        width: '9px', height: '9px', borderRadius: '50%',
-                        background: '#7C3AED', border: '2px solid var(--card-bg)',
-                      }} />
+                        position: 'absolute', top: '-6px', right: '-9px',
+                        minWidth: '16px', height: '16px', padding: '0 3px',
+                        borderRadius: '999px', background: '#EF4444', border: '2px solid var(--card-bg)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxSizing: 'border-box',
+                      }}>
+                        <span style={{ fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1 }}>
+                          {badgeCount > 9 ? '9+' : badgeCount}
+                        </span>
+                      </div>
                     )}
                   </div>
                   <span style={{
