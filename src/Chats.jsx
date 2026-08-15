@@ -290,6 +290,24 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   const pressTimer = useRef(null)
   const longPressTriggered = useRef(false)
 
+  // Header height is measured (not hardcoded) so the list's top padding
+  // always matches the *actual* rendered header exactly — no matter the
+  // font, safe-area insets, or text wrapping on a given device. This is
+  // what makes the scroll-to-top boundary land exactly on the first chat
+  // row instead of stopping halfway behind the header.
+  const headerRef = useRef(null)
+  const [headerHeight, setHeaderHeight] = useState(76)
+
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const measure = () => setHeaderHeight(el.offsetHeight)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const headerBg = isDark ? '#000000' : '#FFFFFF'
 
   useEffect(() => {
@@ -373,13 +391,46 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
     alert('Chat reported. Thank you for helping keep our community safe!')
   }
 
+  // Same block flow as inside an open thread, just triggered from the
+  // long-press sheet on an inbox row instead. Other user's id/name is
+  // derived from whichever side of the conversation isn't me.
+  async function handleBlock() {
+    const c = actionSheetFor
+    if (!c) return
+    setActionSheetFor(null)
+    const isSelfChat = c.buyer_id === c.seller_id
+    if (isSelfChat) return
+
+    const isBuyer = c.buyer_id === session.user.id
+    const otherUserId = isBuyer ? c.seller_id : c.buyer_id
+    const otherProfile = isBuyer ? c.seller : c.buyer
+    const otherName = otherProfile?.full_name || 'this user'
+
+    if (!window.confirm(`Block ${otherName}? They won't be able to message you again.`)) return
+
+    const { error: blockErr } = await supabase
+      .from('blocked_users')
+      .insert({ blocker_id: session.user.id, blocked_id: otherUserId })
+    if (blockErr) {
+      console.error('Error blocking user:', blockErr.message)
+      alert('Could not block this user. Please try again.')
+      return
+    }
+    const result = await deleteConversationVerified(c.id)
+    if (!result.ok) console.error('Blocked user but could not delete the conversation.')
+    setConversations(prev => prev.filter(x => x.id !== c.id))
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
-      <div style={{
-        padding: '18px 20px 20px',
-        background: headerBg,
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
-      }}>
+      <div
+        ref={headerRef}
+        style={{
+          padding: '18px 20px 20px',
+          background: headerBg,
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 120,
+        }}
+      >
         <div style={{ textAlign: 'left' }}>
           <h1 style={{
             margin: 0,
@@ -400,7 +451,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
         </div>
       </div>
 
-      <div style={{ paddingTop: '80px' }}>
+      <div style={{ paddingTop: `${headerHeight}px` }}>
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
@@ -478,7 +529,8 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
             onClose={() => setActionSheetFor(null)}
             onDelete={handleDelete}
             onReport={handleReport}
-            showBlock={false}
+            onBlock={handleBlock}
+            showBlock={actionSheetFor.buyer_id !== actionSheetFor.seller_id}
           />
         )}
       </AnimatePresence>
@@ -506,13 +558,68 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   const isRecipient = !isSelfChat && session.user.id === conversation.sellerId
   const isInitiator = !isSelfChat && session.user.id === conversation.buyerId
   const isPendingForMe = status === 'pending' && isRecipient
-
-  // The pending-request banner adds extra height under the header, only
-  // when it's actually showing — the scroll area's top padding accounts
-  // for that so messages never start out hidden beneath it.
   const showPendingBanner = isPendingForMe
   const showInitiatorNotice = status === 'pending' && isInitiator
-  const topOffset = 64 + (showPendingBanner ? 92 : 0) + (showInitiatorNotice ? 44 : 0)
+
+  // --- Precise layout measurement -------------------------------------
+  // Header and banner heights are measured off the real DOM (not assumed
+  // pixel constants) so the message list's top padding — and therefore
+  // where scrolling "stops" at the very top — lines up exactly with the
+  // bottom edge of whatever is actually fixed above it. Same idea for the
+  // input bar height, which sizes the list's bottom padding.
+  const headerRef = useRef(null)
+  const bannerRef = useRef(null)
+  const inputBarRef = useRef(null)
+  const [headerHeight, setHeaderHeight] = useState(64)
+  const [bannerHeight, setBannerHeight] = useState(0)
+  const [inputBarHeight, setInputBarHeight] = useState(72)
+
+  useEffect(() => {
+    const headerEl = headerRef.current
+    const inputEl = inputBarRef.current
+    if (!headerEl || !inputEl) return
+
+    const measure = () => {
+      setHeaderHeight(headerEl.offsetHeight)
+      setBannerHeight(bannerRef.current ? bannerRef.current.offsetHeight : 0)
+      setInputBarHeight(inputEl.offsetHeight)
+    }
+    measure()
+
+    const ro = new ResizeObserver(measure)
+    ro.observe(headerEl)
+    ro.observe(inputEl)
+    if (bannerRef.current) ro.observe(bannerRef.current)
+
+    return () => ro.disconnect()
+  }, [showPendingBanner, showInitiatorNotice])
+
+  const topOffset = headerHeight + bannerHeight
+
+  // --- Keyboard-aware bottom offset ------------------------------------
+  // On mobile, the layout viewport doesn't shrink when the keyboard opens
+  // (only visualViewport does), so a plain `bottom: 0` bar stays pinned
+  // under the keyboard instead of riding above it, and anything else fixed
+  // at the bottom of the screen (like nav tabs) can end up rendered on top
+  // of the keyboard. Tracking visualViewport and nudging the input bar up
+  // by the keyboard's height keeps it glued just above the keyboard.
+  const [keyboardOffset, setKeyboardOffset] = useState(0)
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const handleViewportChange = () => {
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      setKeyboardOffset(offset)
+    }
+    handleViewportChange()
+    vv.addEventListener('resize', handleViewportChange)
+    vv.addEventListener('scroll', handleViewportChange)
+    return () => {
+      vv.removeEventListener('resize', handleViewportChange)
+      vv.removeEventListener('scroll', handleViewportChange)
+    }
+  }, [])
 
   useEffect(() => {
     fetchMessages(true)
@@ -658,11 +765,14 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
     // it lives in a sibling container that no longer grows past the screen.
     <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       {/* HEADER — fixed, stays put regardless of message-list scroll */}
-      <div style={{
-        padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
-        display: 'flex', alignItems: 'center', gap: '12px',
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 130,
-      }}>
+      <div
+        ref={headerRef}
+        style={{
+          padding: '16px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)',
+          display: 'flex', alignItems: 'center', gap: '12px',
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 130,
+        }}
+      >
         <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)', display: 'flex' }}>
           <Icon name="arrowLeft" size={20} />
         </div>
@@ -697,12 +807,17 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         </div>
       </div>
 
-      {/* PENDING-REQUEST BANNER — also fixed, sits directly under the header */}
+      {/* PENDING-REQUEST BANNER — also fixed, sits directly under the
+          header. Its "top" is the *measured* header height, not a
+          hardcoded '64px', so it never gaps or overlaps. */}
       {isPendingForMe && (
-        <div style={{
-          padding: '14px 20px', background: 'var(--app-accent-soft)', borderBottom: '1px solid var(--app-border)',
-          position: 'fixed', top: '64px', left: 0, right: 0, zIndex: 129,
-        }}>
+        <div
+          ref={bannerRef}
+          style={{
+            padding: '14px 20px', background: 'var(--app-accent-soft)', borderBottom: '1px solid var(--app-border)',
+            position: 'fixed', top: `${headerHeight}px`, left: 0, right: 0, zIndex: 129,
+          }}
+        >
           <p style={{ margin: '0 0 10px', fontSize: '12.5px', fontWeight: 700, color: 'var(--app-accent)' }}>
             Message request — keep this conversation or delete it?
           </p>
@@ -726,10 +841,13 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
       )}
 
       {status === 'pending' && isInitiator && (
-        <div style={{
-          padding: '10px 20px', background: 'var(--page-bg)', borderBottom: '1px solid var(--app-border)',
-          position: 'fixed', top: '64px', left: 0, right: 0, zIndex: 129,
-        }}>
+        <div
+          ref={bannerRef}
+          style={{
+            padding: '10px 20px', background: 'var(--page-bg)', borderBottom: '1px solid var(--app-border)',
+            position: 'fixed', top: `${headerHeight}px`, left: 0, right: 0, zIndex: 129,
+          }}
+        >
           <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)', textAlign: 'center' }}>
             Message request sent — they'll see it once they check their chats.
           </p>
@@ -738,10 +856,11 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
 
       <div style={{
         flex: 1, position: 'relative', overflow: 'hidden', background: 'rgba(124,58,237,0.035)',
-        paddingTop: `${topOffset}px`, paddingBottom: '80px',
+        paddingTop: `${topOffset}px`, paddingBottom: `${inputBarHeight + keyboardOffset}px`,
+        transition: 'padding-bottom 0.15s ease-out',
       }}>
         <div style={{
-          position: 'absolute', inset: 0, top: `${topOffset}px`, bottom: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'absolute', inset: 0, top: `${topOffset}px`, bottom: `${inputBarHeight + keyboardOffset}px`, display: 'flex', alignItems: 'center', justifyContent: 'center',
           pointerEvents: 'none', overflow: 'hidden',
         }}>
           <span style={{
@@ -752,7 +871,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
           </span>
         </div>
 
-        <div style={{ position: 'relative', height: '100%', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ position: 'relative', height: '100%', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
           {loading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -822,13 +941,19 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         </div>
       </div>
 
-      {/* MESSAGE INPUT BAR — fixed at the bottom, doesn't scroll away with
-          the message list */}
-      <div style={{
-        padding: '12px 16px', background: 'var(--card-bg)', borderTop: '1px solid var(--app-border)',
-        display: 'flex', gap: '8px',
-        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 130,
-      }}>
+      {/* MESSAGE INPUT BAR — fixed at the bottom, but its `bottom` offset
+          tracks the visualViewport keyboard height, so it rides up flush
+          above the keyboard instead of staying pinned under it (which is
+          what let nav chrome/keyboard overlap look glitchy before). */}
+      <div
+        ref={inputBarRef}
+        style={{
+          padding: '12px 16px', background: 'var(--card-bg)', borderTop: '1px solid var(--app-border)',
+          display: 'flex', gap: '8px',
+          position: 'fixed', bottom: `${keyboardOffset}px`, left: 0, right: 0, zIndex: 130,
+          transition: 'bottom 0.15s ease-out',
+        }}
+      >
         <input
           value={text}
           onChange={e => setText(e.target.value)}
