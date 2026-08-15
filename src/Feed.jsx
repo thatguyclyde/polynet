@@ -25,9 +25,6 @@ const FUZZY_THRESHOLD = 0.6
 const COLLAPSE_THRESHOLD = 30 // must match FEED_COLLAPSE_THRESHOLD in App.jsx
 const HEADER_HEIGHT_FALLBACK = 82 // used only until the real header height is measured
 const COMMENT_PREVIEW_COUNT = 2
-const PULL_THRESHOLD = 64 // px of pull needed to reveal the Refresh button
-const PULL_MAX = 90 // px cap on the visual stretch while actively dragging
-const REVEAL_HEIGHT = 54 // px the pull area rests at once pinned open with the button
 
 const REPORT_REASONS = [
   'Cyberbullying or harassment',
@@ -128,18 +125,6 @@ function CopyIcon({ size = 17, color = 'currentColor' }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  )
-}
-
-// Same reasoning as CopyIcon — drawn inline so the Refresh button doesn't
-// depend on an unverified Icon.jsx name.
-function RefreshIcon({ size = 13, color = 'currentColor' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="23 4 23 10 17 10" />
-      <polyline points="1 20 1 14 7 14" />
-      <path d="M3.51 9a9 9 0 0 1 14.36-3.36L23 10M1 14l5.13 4.36A9 9 0 0 0 20.49 15" />
     </svg>
   )
 }
@@ -446,6 +431,10 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const isCollapsed = scrollY > COLLAPSE_THRESHOLD
 
   // ── Dynamic header height ──────────────────────────────────────────
+  // Measures the fixed title block's REAL rendered height via
+  // ResizeObserver, instead of a hardcoded constant — so the content
+  // below it (the filter row) is always padded correctly, regardless of
+  // web-font load timing shifting the header's true height slightly.
   const headerRef = useRef(null)
   const [headerHeight, setHeaderHeight] = useState(HEADER_HEIGHT_FALLBACK)
 
@@ -458,94 +447,6 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-
-  // ── Elastic pull, gated strictly to the true top of the feed ────────
-  // Pulling only ever starts when scrollY is genuinely 0 — anywhere else
-  // (including while merely scrolling back upward mid-list), this bails
-  // immediately at touchstart and native scrolling is left completely
-  // untouched. Pulling past the threshold no longer auto-refreshes; it
-  // pins the stretch open at a resting height and reveals a Refresh
-  // button, which the person has to actually tap.
-  const [pullDistance, setPullDistance] = useState(0)
-  const [refreshing, setRefreshing] = useState(false)
-  const [showRefreshButton, setShowRefreshButton] = useState(false)
-  const pullAreaRef = useRef(null)
-  const touchStartY = useRef(null)
-  const isPulling = useRef(false)
-  const pullDistanceRef = useRef(0)
-  const scrollYRef = useRef(scrollY)
-  const refreshingRef = useRef(false)
-  const showRefreshButtonRef = useRef(false)
-
-  useEffect(() => { scrollYRef.current = scrollY }, [scrollY])
-  useEffect(() => { refreshingRef.current = refreshing }, [refreshing])
-  useEffect(() => { showRefreshButtonRef.current = showRefreshButton }, [showRefreshButton])
-
-  function updatePullDistance(v) {
-    pullDistanceRef.current = v
-    setPullDistance(v)
-  }
-
-  useEffect(() => {
-    const el = pullAreaRef.current
-    if (!el) return
-
-    function onTouchStart(e) {
-      if (scrollYRef.current > 0 || refreshingRef.current || showRefreshButtonRef.current) {
-        isPulling.current = false
-        return
-      }
-      touchStartY.current = e.touches[0].clientY
-      isPulling.current = true
-    }
-
-    function onTouchMove(e) {
-      if (!isPulling.current || touchStartY.current == null) return
-      const delta = e.touches[0].clientY - touchStartY.current
-      if (delta <= 0) {
-        isPulling.current = false
-        updatePullDistance(0)
-        return
-      }
-      // Safe to take over here — already at the very top of the feed, so
-      // there's nothing above for the browser to natively scroll to.
-      e.preventDefault()
-      updatePullDistance(Math.min(PULL_MAX, delta * 0.45))
-    }
-
-    function onTouchEnd() {
-      if (!isPulling.current) return
-      isPulling.current = false
-      touchStartY.current = null
-      const pulled = pullDistanceRef.current
-      if (pulled >= PULL_THRESHOLD) {
-        updatePullDistance(REVEAL_HEIGHT)
-        setShowRefreshButton(true)
-      } else {
-        updatePullDistance(0)
-      }
-    }
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchmove', onTouchMove, { passive: false })
-    el.addEventListener('touchend', onTouchEnd, { passive: true })
-    el.addEventListener('touchcancel', onTouchEnd, { passive: true })
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchmove', onTouchMove)
-      el.removeEventListener('touchend', onTouchEnd)
-      el.removeEventListener('touchcancel', onTouchEnd)
-    }
-  }, [])
-
-  async function handleManualRefresh() {
-    setShowRefreshButton(false)
-    setRefreshing(true)
-    updatePullDistance(44)
-    await fetchPosts(true) // true → shows the full loading state while it reloads
-    setRefreshing(false)
-    updatePullDistance(0)
-  }
 
   useEffect(() => {
     fetchPosts()
@@ -956,14 +857,21 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
         </div>
       </div>
 
-      {/* DOCKED SKILLS BUTTON — fixed, appears only once collapsed. */}
+      {/* DOCKED SKILLS BUTTON — fixed, appears only once collapsed. Its
+          coordinates now match the AVATAR's own slot in App.jsx (top:14px,
+          right:16px) — since the avatar simultaneously slides left via its
+          own animation there, this button flies up and settles exactly
+          into the spot the avatar just vacated, rather than sitting off to
+          its side. Shares layoutId with the inline copy in the filter row
+          below, so Framer Motion interpolates the whole move (including
+          the upward travel) automatically between the two positions. */}
       <AnimatePresence>
         {isCollapsed && (
           <motion.div
             layoutId="feed-skills-button"
             onClick={openSkillSearch}
             style={{
-              position: 'fixed', top: '14px', right: '62px', zIndex: 160,
+              position: 'fixed', top: '14px', right: '16px', zIndex: 160,
               display: 'flex', alignItems: 'center', gap: '5px',
               padding: '5px 10px', borderRadius: '999px',
               background: BRAND_PURPLE, cursor: 'pointer',
@@ -975,348 +883,290 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
         )}
       </AnimatePresence>
 
-      {/* PULL AREA — real touch listeners attached here (see the effect
-          above). Only ever activates at the true top of the list. */}
-      <div ref={pullAreaRef} style={{ position: 'relative' }}>
-        {/* Pull indicator — dots while actively dragging, a Refresh
-            button once pinned open past the threshold, dots again while
-            the manual refresh is actually running. */}
-        <div style={{
-          position: 'absolute', top: `${headerHeight}px`, left: 0, right: 0,
-          height: `${pullDistance}px`, overflow: 'hidden',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {refreshing ? (
-            <div style={{ display: 'flex', gap: '7px' }}>
-              {[0, 1, 2].map(i => (
-                <div
-                  key={i}
-                  style={{
-                    width: '7px', height: '7px', borderRadius: '50%', background: BRAND_PURPLE,
-                    animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-                  }}
-                />
-              ))}
+      {/* Content sits under the fixed title via a simple paddingTop match
+          — no pull-to-refresh, no touch handling, no transform here
+          anymore. This is plain, ordinary scrolling content. */}
+      <div style={{ paddingTop: `${headerHeight}px` }}>
+
+        {/* FILTERS + INLINE SKILLS BUTTON */}
+        <div style={{ padding: '0 20px 12px', background: headerBg }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '2px', flex: 1 }}>
+              {FILTERS.map(f => {
+                const isActive = activeFilter === f.id
+                return (
+                  <div
+                    key={f.id}
+                    onClick={() => setActiveFilter(f.id)}
+                    style={{
+                      padding: '4px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
+                      whiteSpace: 'nowrap', cursor: 'pointer',
+                      border: isActive ? `1.5px solid ${f.color}` : `1.5px solid ${filterInactiveBorder}`,
+                      background: isActive ? f.bg : 'transparent',
+                      color: isActive ? f.color : filterInactiveText,
+                      transition: 'border-color 0.15s, background 0.15s, color 0.15s',
+                    }}
+                  >
+                    {f.label}
+                  </div>
+                )
+              })}
             </div>
-          ) : showRefreshButton ? (
-            <div
-              onClick={handleManualRefresh}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '8px 16px', borderRadius: '999px',
-                background: BRAND_PURPLE, color: '#fff', fontWeight: 700, fontSize: '12.5px',
-                cursor: 'pointer', boxShadow: '0 3px 10px rgba(124,58,237,0.35)',
-              }}
-            >
-              <RefreshIcon size={13} color="#fff" />
-              Refresh
-            </div>
-          ) : pullDistance > 0 ? (
-            <div style={{ display: 'flex', gap: '7px' }}>
-              {[0, 1, 2].map(i => (
-                <div
-                  key={i}
-                  style={{
-                    width: '7px', height: '7px', borderRadius: '50%', background: BRAND_PURPLE,
-                    opacity: Math.min(1, pullDistance / PULL_THRESHOLD),
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
+
+            {!isCollapsed && (
+              <motion.div
+                layoutId="feed-skills-button"
+                onClick={openSkillSearch}
+                style={{
+                  flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px',
+                  padding: '5px 10px', borderRadius: '999px',
+                  background: BRAND_PURPLE, cursor: 'pointer',
+                  boxShadow: '0 3px 10px rgba(124,58,237,0.35)',
+                }}
+              >
+                {skillsButtonContent}
+              </motion.div>
+            )}
+          </div>
         </div>
 
-        <div
-          style={{
-            paddingTop: `${headerHeight}px`,
-            transform: `translateY(${pullDistance}px)`,
-            transition: isPulling.current ? 'none' : 'transform 0.25s ease',
-          }}
-        >
-          {/* FILTERS + INLINE SKILLS BUTTON */}
-          <div style={{ padding: '0 20px 12px', background: headerBg }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '2px', flex: 1 }}>
-                {FILTERS.map(f => {
-                  const isActive = activeFilter === f.id
-                  return (
-                    <div
-                      key={f.id}
-                      onClick={() => setActiveFilter(f.id)}
-                      style={{
-                        padding: '4px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
-                        whiteSpace: 'nowrap', cursor: 'pointer',
-                        border: isActive ? `1.5px solid ${f.color}` : `1.5px solid ${filterInactiveBorder}`,
-                        background: isActive ? f.bg : 'transparent',
-                        color: isActive ? f.color : filterInactiveText,
-                        transition: 'border-color 0.15s, background 0.15s, color 0.15s',
-                      }}
-                    >
-                      {f.label}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {!isCollapsed && (
-                <motion.div
-                  layoutId="feed-skills-button"
-                  onClick={openSkillSearch}
-                  style={{
-                    flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px',
-                    padding: '5px 10px', borderRadius: '999px',
-                    background: BRAND_PURPLE, cursor: 'pointer',
-                    boxShadow: '0 3px 10px rgba(124,58,237,0.35)',
-                  }}
-                >
-                  {skillsButtonContent}
-                </motion.div>
-              )}
+        {loading ? <FeedSkeleton /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
+          {filteredPosts.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '70px 30px' }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No posts here yet</p>
             </div>
-          </div>
+          )}
+          {filteredPosts.map(post => {
+            const name = getDisplayName(post.profiles)
+            const isAuthorAdmin = !!post.profiles?.is_admin
+            const dept = post.profiles?.department || ''
+            const isSchoolRelated = post.post_type === 'school'
+            const isLiked = likedIds.has(post.id)
+            const comments = commentsByPost[post.id] || []
+            const isExpanded = expandedComments.has(post.id)
+            const visibleComments = isExpanded ? comments : comments.slice(0, COMMENT_PREVIEW_COUNT)
+            const hasMoreComments = comments.length > COMMENT_PREVIEW_COUNT
+            const isOwnPost = post.author_id === session.user.id
+            const isViewingThis = viewingPost?.id === post.id
+            const hasImage = !!post.image_url
+            const isImageLoaded = loadedImageIds.has(post.id)
+            const menuOpenForThisPost = openMenuId === post.id && !isViewingThis
 
-          {loading ? <FeedSkeleton /> : (
-          <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
-            {filteredPosts.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '70px 30px' }}>
-                <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No posts here yet</p>
-              </div>
-            )}
-            {filteredPosts.map(post => {
-              const name = getDisplayName(post.profiles)
-              const isAuthorAdmin = !!post.profiles?.is_admin
-              const dept = post.profiles?.department || ''
-              const isSchoolRelated = post.post_type === 'school'
-              const isLiked = likedIds.has(post.id)
-              const comments = commentsByPost[post.id] || []
-              const isExpanded = expandedComments.has(post.id)
-              const visibleComments = isExpanded ? comments : comments.slice(0, COMMENT_PREVIEW_COUNT)
-              const hasMoreComments = comments.length > COMMENT_PREVIEW_COUNT
-              const isOwnPost = post.author_id === session.user.id
-              const isViewingThis = viewingPost?.id === post.id
-              const hasImage = !!post.image_url
-              const isImageLoaded = loadedImageIds.has(post.id)
-              const menuOpenForThisPost = openMenuId === post.id && !isViewingThis
+            return (
+              <motion.div key={post.id} layout="position" style={{ borderBottom: `8px solid ${postDivider}` }}>
+                {/* Header row — no separator line here; a thin divider
+                    now sits at the very bottom of the whole post instead. */}
+                <div style={{
+                  display: 'flex', gap: '10px', alignItems: 'flex-start',
+                  padding: '12px 16px 10px', position: 'relative',
+                }}>
+                  <Avatar url={post.profiles?.avatar_url} name={name} size={40} onClick={() => goToAuthor(post.author_id)} />
 
-              return (
-                <motion.div key={post.id} layout="position" style={{ borderBottom: `8px solid ${postDivider}` }}>
-                  {/* Header row — the old separator line between owner
-                      details and the post itself is gone from here; a
-                      matching thin line now sits at the very bottom of
-                      the whole post instead (below). */}
-                  <div style={{
-                    display: 'flex', gap: '10px', alignItems: 'flex-start',
-                    padding: '12px 16px 10px', position: 'relative',
-                  }}>
-                    <Avatar url={post.profiles?.avatar_url} name={name} size={40} onClick={() => goToAuthor(post.author_id)} />
-
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
-                        <span
-                          onClick={() => goToAuthor(post.author_id)}
-                          title={name}
-                          style={{
-                            fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
-                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                            minWidth: 0, maxWidth: '75%',
-                          }}
-                        >
-                          {name}
-                        </span>
-                        {isAuthorAdmin && <VerifiedBadge size={12} />}
-                        {isSchoolRelated && (
-                          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', marginLeft: '2px' }} title="School related">
-                            <Icon name="school" size={13} color="var(--success)" fill="none" />
-                          </div>
-                        )}
-                      </div>
-                      {dept && (
-                        <div
-                          title={dept}
-                          style={{
-                            fontSize: '11px', color: 'var(--text-muted)', marginTop: '0px',
-                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                            textAlign: 'left',
-                          }}
-                        >
-                          {dept}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+                      <span
+                        onClick={() => goToAuthor(post.author_id)}
+                        title={name}
+                        style={{
+                          fontWeight: 700, fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          minWidth: 0, maxWidth: '75%',
+                        }}
+                      >
+                        {name}
+                      </span>
+                      {isAuthorAdmin && <VerifiedBadge size={12} />}
+                      {isSchoolRelated && (
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', marginLeft: '2px' }} title="School related">
+                          <Icon name="school" size={13} color="var(--success)" fill="none" />
                         </div>
                       )}
                     </div>
+                    {dept && (
+                      <div
+                        title={dept}
+                        style={{
+                          fontSize: '11px', color: 'var(--text-muted)', marginTop: '0px',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          textAlign: 'left',
+                        }}
+                      >
+                        {dept}
+                      </div>
+                    )}
+                  </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{timeAgo(post.created_at)}</div>
-                      <div style={{ position: 'relative' }}>
-                        <div
-                          onClick={() => setOpenMenuId(openMenuId === post.id ? null : post.id)}
-                          style={{ cursor: 'pointer', padding: '4px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Icon name="ellipsis-vertical" size={18} />
-                        </div>
-                        {menuOpenForThisPost && (
-                          <>
-                            <div
-                              onClick={() => setOpenMenuId(null)}
-                              style={{ position: 'fixed', inset: 0, zIndex: 99 }}
-                            />
-                            <div style={{
-                              position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                              background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
-                              boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '160px', overflow: 'hidden'
-                            }}>
-                              {isOwnPost && (
-                                <div
-                                  onClick={() => { setOpenMenuId(null); setDeletePostId(post.id) }}
-                                  style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                                >
-                                  <Icon name="trash-2" size={14} />
-                                  Delete
-                                </div>
-                              )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{timeAgo(post.created_at)}</div>
+                    <div style={{ position: 'relative' }}>
+                      <div
+                        onClick={() => setOpenMenuId(openMenuId === post.id ? null : post.id)}
+                        style={{ cursor: 'pointer', padding: '4px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <Icon name="ellipsis-vertical" size={18} />
+                      </div>
+                      {menuOpenForThisPost && (
+                        <>
+                          <div
+                            onClick={() => setOpenMenuId(null)}
+                            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                          />
+                          <div style={{
+                            position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                            background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '160px', overflow: 'hidden'
+                          }}>
+                            {isOwnPost && (
                               <div
-                                onClick={() => handleSaveImage(post)}
-                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                              >
-                                <Icon name="download" size={14} />
-                                {savingImageId === post.id ? 'Saving...' : 'Save Image'}
-                              </div>
-                              {/* Report — always available, own posts included. */}
-                              <div
-                                onClick={() => requestReportPost(post.id)}
+                                onClick={() => { setOpenMenuId(null); setDeletePostId(post.id) }}
                                 style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
                               >
-                                <Icon name="flag" size={14} />
-                                Report
+                                <Icon name="trash-2" size={14} />
+                                Delete
                               </div>
-                              <div
-                                onClick={() => openSharePost(post)}
-                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
-                              >
-                                <Icon name="share-2" size={14} />
-                                Share
-                              </div>
+                            )}
+                            <div
+                              onClick={() => handleSaveImage(post)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                            >
+                              <Icon name="download" size={14} />
+                              {savingImageId === post.id ? 'Saving...' : 'Save Image'}
                             </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {post.image_url && (
-                    <div style={{
-                      position: 'relative',
-                      width: '100%',
-                      height: '340px',
-                      background: 'var(--app-border-soft)',
-                      overflow: 'hidden',
-                    }}>
-                      <motion.img
-                        layoutId={`post-image-${post.id}`}
-                        onClick={() => handleImageTap(post)}
-                        src={post.image_url}
-                        alt="post"
-                        loading="lazy"
-                        onLoad={() => setLoadedImageIds(prev => new Set(prev).add(post.id))}
-                        style={{
-                          width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                          cursor: 'pointer',
-                          opacity: isViewingThis ? 0 : (isImageLoaded ? 1 : 0),
-                          transition: 'opacity 0.25s ease',
-                        }}
-                      />
-                      {burstId === post.id && (
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                          <div style={{ filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
-                            <Icon name="heart" size={72} strokeWidth={0} color={LIKE_RED} fill={LIKE_RED} />
+                            {/* Report — always available, own posts included. */}
+                            <div
+                              onClick={() => requestReportPost(post.id)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                            >
+                              <Icon name="flag" size={14} />
+                              Report
+                            </div>
+                            <div
+                              onClick={() => openSharePost(post)}
+                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}
+                            >
+                              <Icon name="share-2" size={14} />
+                              Share
+                            </div>
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
-                  )}
-
-                  {post.content && (
-                    hasImage ? (
-                      <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px', textAlign: 'left' }}>
-                        <span>{post.content}</span>
-                      </div>
-                    ) : (
-                      <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800, textAlign: 'left' }}>
-                        <span>{post.content}</span>
-                      </div>
-                    )
-                  )}
-
-                  <div style={{ display: 'flex', gap: '28px', padding: post.image_url ? '10px 16px 0' : '2px 16px 0' }}>
-                    <LikeButton
-                      isLiked={isLiked}
-                      count={likeCounts[post.id] || 0}
-                      pulseKey={likePulse[post.id] || 0}
-                      onClick={() => toggleLike(post.id)}
-                    />
-                    <CommentButton
-                      isOpen={openComments === post.id}
-                      count={commentCounts[post.id] || 0}
-                      onClick={() => toggleComments(post.id)}
-                    />
                   </div>
+                </div>
 
-                  <AnimatePresence initial={false}>
-                    {openComments === post.id && (
-                      <motion.div
-                        key="comments"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.7 }}
-                        style={{ overflow: 'hidden' }}
-                      >
-                        <div style={{ padding: '10px 16px 14px' }}>
-                          {visibleComments.map(c => {
-                            const commentName = getDisplayName(c.profiles)
-                            const isCommentAuthorAdmin = !!c.profiles?.is_admin
-                            return (
-                              <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                                <Avatar name={commentName} size={26} onClick={() => goToAuthor(c.author_id)} />
-                                <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1, textAlign: 'left' }}>
-                                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px', textAlign: 'left' }}>
-                                    {commentName}
-                                    {isCommentAuthorAdmin && <VerifiedBadge size={11} />}
-                                  </div>
-                                  <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px', textAlign: 'left' }}>{c.content}</div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                          {comments.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>No comments yet</p>}
-                          {hasMoreComments && (
-                            <div
-                              onClick={() => toggleExpandComments(post.id)}
-                              style={{ marginTop: '10px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}
-                            >
-                              {isExpanded ? 'Show less' : `Read more comments (${comments.length - COMMENT_PREVIEW_COUNT})`}
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                            <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitComment(post.id) }} placeholder="Write a comment..." style={{ flex: 1, padding: '10px 12px', borderRadius: '12px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--text-strong)', outline: 'none', fontSize: '13px' }} />
-                            <button onClick={() => submitComment(post.id)} disabled={commentLoading || !newComment.trim()} style={{ padding: '10px 14px', borderRadius: '12px', border: 'none', background: newComment.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                              <Icon name="send" size={14} />
-                            </button>
-                          </div>
+                {post.image_url && (
+                  <div style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: '340px',
+                    background: 'var(--app-border-soft)',
+                    overflow: 'hidden',
+                  }}>
+                    <motion.img
+                      layoutId={`post-image-${post.id}`}
+                      onClick={() => handleImageTap(post)}
+                      src={post.image_url}
+                      alt="post"
+                      loading="lazy"
+                      onLoad={() => setLoadedImageIds(prev => new Set(prev).add(post.id))}
+                      style={{
+                        width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                        cursor: 'pointer',
+                        opacity: isViewingThis ? 0 : (isImageLoaded ? 1 : 0),
+                        transition: 'opacity 0.25s ease',
+                      }}
+                    />
+                    {burstId === post.id && (
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                        <div style={{ filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.35))', animation: 'heartPop 0.6s ease' }}>
+                          <Icon name="heart" size={72} strokeWidth={0} color={LIKE_RED} fill={LIKE_RED} />
                         </div>
-                      </motion.div>
+                      </div>
                     )}
-                  </AnimatePresence>
+                  </div>
+                )}
 
-                  {/* Divider — moved here from the header row, so it now
-                      marks the very bottom of the whole post rather than
-                      separating owner details from content. */}
-                  <div style={{ borderBottom: '1px solid var(--app-border-soft)', margin: '10px 16px 0' }} />
-                </motion.div>
-              )
-            })}
-          </div>
-          )}
+                {post.content && (
+                  hasImage ? (
+                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-body)', lineHeight: 1.6, fontSize: '14px', textAlign: 'left' }}>
+                      <span>{post.content}</span>
+                    </div>
+                  ) : (
+                    <div style={{ margin: '8px 16px 10px', color: 'var(--text-strong)', lineHeight: 1.5, fontSize: '16px', fontWeight: 800, textAlign: 'left' }}>
+                      <span>{post.content}</span>
+                    </div>
+                  )
+                )}
+
+                <div style={{ display: 'flex', gap: '28px', padding: post.image_url ? '10px 16px 0' : '2px 16px 0' }}>
+                  <LikeButton
+                    isLiked={isLiked}
+                    count={likeCounts[post.id] || 0}
+                    pulseKey={likePulse[post.id] || 0}
+                    onClick={() => toggleLike(post.id)}
+                  />
+                  <CommentButton
+                    isOpen={openComments === post.id}
+                    count={commentCounts[post.id] || 0}
+                    onClick={() => toggleComments(post.id)}
+                  />
+                </div>
+
+                <AnimatePresence initial={false}>
+                  {openComments === post.id && (
+                    <motion.div
+                      key="comments"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.7 }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <div style={{ padding: '10px 16px 14px' }}>
+                        {visibleComments.map(c => {
+                          const commentName = getDisplayName(c.profiles)
+                          const isCommentAuthorAdmin = !!c.profiles?.is_admin
+                          return (
+                            <div key={c.id} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                              <Avatar name={commentName} size={26} onClick={() => goToAuthor(c.author_id)} />
+                              <div style={{ background: 'var(--input-bg)', borderRadius: '12px', padding: '8px 10px', flex: 1, textAlign: 'left' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: '4px', textAlign: 'left' }}>
+                                  {commentName}
+                                  {isCommentAuthorAdmin && <VerifiedBadge size={11} />}
+                                </div>
+                                <div style={{ fontSize: '13px', color: 'var(--text-body)', marginTop: '2px', textAlign: 'left' }}>{c.content}</div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {comments.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>No comments yet</p>}
+                        {hasMoreComments && (
+                          <div
+                            onClick={() => toggleExpandComments(post.id)}
+                            style={{ marginTop: '10px', fontSize: '12px', fontWeight: 800, color: 'var(--app-accent)', cursor: 'pointer' }}
+                          >
+                            {isExpanded ? 'Show less' : `Read more comments (${comments.length - COMMENT_PREVIEW_COUNT})`}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                          <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitComment(post.id) }} placeholder="Write a comment..." style={{ flex: 1, padding: '10px 12px', borderRadius: '12px', border: '1px solid var(--app-border-soft)', background: 'var(--input-bg)', color: 'var(--text-strong)', outline: 'none', fontSize: '13px' }} />
+                          <button onClick={() => submitComment(post.id)} disabled={commentLoading || !newComment.trim()} style={{ padding: '10px 14px', borderRadius: '12px', border: 'none', background: newComment.trim() ? 'var(--app-accent)' : 'var(--app-border-soft)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                            <Icon name="send" size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Divider — marks the very bottom of the whole post. */}
+                <div style={{ borderBottom: '1px solid var(--app-border-soft)', margin: '10px 16px 0' }} />
+              </motion.div>
+            )
+          })}
         </div>
+        )}
       </div>
 
       <div
