@@ -133,31 +133,14 @@ function ListingCardSkeleton({ height = 120 }) {
   )
 }
 
-// Full-page PolyMart loading state — header, search/filter row, and a
-// 2-column grid of card placeholders, matching the real layout so nothing
-// visibly jumps once listings actually load in.
-function PolyMartSkeleton({ headerBg }) {
+// Grid of card placeholders for the listings area only — the real header,
+// search bar, and category filters stay visible and interactive the whole
+// time; only this section swaps out while listings are loading.
+function ListingsGridSkeleton() {
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
       <SkeletonStyle />
-      <div style={{ padding: '18px 20px 14px', background: headerBg }}>
-        <div style={{ width: '140px', height: '26px', borderRadius: '6px', marginBottom: '8px', ...shimmerBg }} />
-        <div style={{ width: '110px', height: '13px', borderRadius: '6px', ...shimmerBg }} />
-      </div>
-      <div style={{ padding: '12px 20px 4px' }}>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-          <div style={{ flex: '0 0 65%', height: '40px', borderRadius: '12px', ...shimmerBg }} />
-          <div style={{ flex: 1, height: '40px', borderRadius: '12px', ...shimmerBg }} />
-        </div>
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '4px' }}>
-          {[0, 1, 2, 3].map(i => (
-            <div key={i} style={{ width: '76px', height: '32px', borderRadius: '20px', flexShrink: 0, ...shimmerBg }} />
-          ))}
-        </div>
-      </div>
-      <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-        {[0, 1, 2, 3, 4, 5].map(i => <ListingCardSkeleton key={i} />)}
-      </div>
+      {[0, 1, 2, 3, 4, 5].map(i => <ListingCardSkeleton key={i} />)}
     </div>
   )
 }
@@ -734,10 +717,6 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   // the existing page/card contrast already works fine.
   const listingsAreaBg = isDark ? 'var(--page-bg)' : '#F5F4FA'
 
- if (loading) {
-    return <PolyMartSkeleton headerBg={isDark ? '#000000' : '#FFFFFF'} />
-  }
-
   if (selectedListing) {
     const l = selectedListing
     const images = getListingImages(l)
@@ -1192,7 +1171,9 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 
       {/* Listings area — slightly darker background in light mode so cards
           stand out clearly from the page behind them. paddingTop accounts
-          for the now-fixed header above it. */}
+          for the now-fixed header above it. Header/search/filters above
+          this point always render for real — only the section below swaps
+          between skeleton cards and actual listings. */}
       <div style={{ background: listingsAreaBg, minHeight: '40vh', paddingTop: '78px' }}>
 
         <div style={{ padding: '12px 20px 4px' }}>
@@ -1250,78 +1231,84 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
           </div>
         </div>
 
-        {filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '80px 30px' }}>
-            <Icon name="shoppingBag" size={40} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '12px' }} />
-            <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No listings found</p>
-          </div>
-        )}
-
-        <div style={{
-          padding: '16px 20px', display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px',
-        }}>
-          {filtered.map(l => {
-            const thumb = getListingImages(l)[0]
-            return (
-              <div
-                key={l.id}
-                onClick={() => handleCardClick(l)}
-                onMouseDown={(e) => handlePressStart(l, e)}
-                onMouseMove={handlePressMove}
-                onMouseUp={handlePressEnd}
-                onMouseLeave={handlePressEnd}
-                onTouchStart={(e) => handlePressStart(l, e)}
-                onTouchMove={handlePressMove}
-                onTouchEnd={handlePressEnd}
-                style={{
-                  background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
-                  border: '1px solid var(--app-border)', cursor: 'pointer',
-                  boxShadow: 'var(--shadow-card)',
-                  userSelect: 'none', WebkitUserSelect: 'none',
-                }}
-              >
-                {/* Shared layoutId with the detail page's hero image — this
-                    drives the zoom-in transition on tap. */}
-                <motion.div layoutId={`listing-visual-${l.id}`} style={{ position: 'relative', width: '100%', height: '120px', overflow: 'hidden' }}>
-                  {thumb ? (
-                    <img
-                      src={thumb}
-                      alt={l.title}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                      onError={(e) => {
-                        e.target.style.display = 'none'
-                        e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
-                      }}
-                    />
-                  ) : null}
-                  <div className="fallback-icon" style={{
-                    width: '100%', height: '100%', background: 'var(--app-accent-soft)',
-                    display: thumb ? 'none' : 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    position: 'absolute', inset: 0,
-                  }}>
-                    <Icon name={categoryIcon(l.category)} size={28} color="var(--app-accent)" />
-                  </div>
-                </motion.div>
-                <div style={{ padding: '10px' }}>
-                  <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
-                    ${Number(l.price).toFixed(2)}
-                  </div>
-                  <div style={{
-                    fontSize: '12.5px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {l.title}
-                  </div>
-                  <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    {timeAgo(l.created_at)}
-                  </div>
-                </div>
+        {loading ? (
+          <ListingsGridSkeleton />
+        ) : (
+          <>
+            {filtered.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '80px 30px' }}>
+                <Icon name="shoppingBag" size={40} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '12px' }} />
+                <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No listings found</p>
               </div>
-            )
-          })}
-        </div>
+            )}
+
+            <div style={{
+              padding: '16px 20px', display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px',
+            }}>
+              {filtered.map(l => {
+                const thumb = getListingImages(l)[0]
+                return (
+                  <div
+                    key={l.id}
+                    onClick={() => handleCardClick(l)}
+                    onMouseDown={(e) => handlePressStart(l, e)}
+                    onMouseMove={handlePressMove}
+                    onMouseUp={handlePressEnd}
+                    onMouseLeave={handlePressEnd}
+                    onTouchStart={(e) => handlePressStart(l, e)}
+                    onTouchMove={handlePressMove}
+                    onTouchEnd={handlePressEnd}
+                    style={{
+                      background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden',
+                      border: '1px solid var(--app-border)', cursor: 'pointer',
+                      boxShadow: 'var(--shadow-card)',
+                      userSelect: 'none', WebkitUserSelect: 'none',
+                    }}
+                  >
+                    {/* Shared layoutId with the detail page's hero image — this
+                        drives the zoom-in transition on tap. */}
+                    <motion.div layoutId={`listing-visual-${l.id}`} style={{ position: 'relative', width: '100%', height: '120px', overflow: 'hidden' }}>
+                      {thumb ? (
+                        <img
+                          src={thumb}
+                          alt={l.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={(e) => {
+                            e.target.style.display = 'none'
+                            e.target.parentElement.querySelector('.fallback-icon')?.style.setProperty('display', 'flex')
+                          }}
+                        />
+                      ) : null}
+                      <div className="fallback-icon" style={{
+                        width: '100%', height: '100%', background: 'var(--app-accent-soft)',
+                        display: thumb ? 'none' : 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        position: 'absolute', inset: 0,
+                      }}>
+                        <Icon name={categoryIcon(l.category)} size={28} color="var(--app-accent)" />
+                      </div>
+                    </motion.div>
+                    <div style={{ padding: '10px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--app-accent)' }}>
+                        ${Number(l.price).toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: '12.5px', fontWeight: 600, color: 'var(--text-strong)', marginTop: '2px',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {l.title}
+                      </div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {timeAgo(l.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
 
         <div style={{ height: '20px' }} />
       </div>
