@@ -28,7 +28,7 @@ const DEPARTMENTS = [
 
 const VERIFIED_BLUE = '#1D9BF0'
 
-const WHATSAPP_NUMBER = '263787525495'
+const WHATSAPP_NUMBER = '263711881821'
 const CONTACT_EMAIL = 'clydechiruka4@gmail.com'
 const FOUNDER_EMAIL = 'clydechiruka4@gmail.com'
 
@@ -168,12 +168,12 @@ function ContactSheet({ onClose }) {
           href={whatsappAppUrl(message)}
           style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', textDecoration: 'none', borderRadius: '12px' }}
         >
-          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(37,211,102,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(37,211,102,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Icon name="whatsapp" size={19} color="#25D366" />
           </div>
-          <div>
+          <div style={{ textAlign: 'left' }}>
             <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>WhatsApp</div>
-            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>0787 525 495</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>071 188 1821</div>
           </div>
         </a>
 
@@ -181,10 +181,10 @@ function ContactSheet({ onClose }) {
           href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('PolyNet Support')}`}
           style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', textDecoration: 'none', borderRadius: '12px' }}
         >
-          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="send" size={17} color="var(--app-accent)" />
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Icon name="mail" size={17} color="var(--app-accent)" />
           </div>
-          <div>
+          <div style={{ textAlign: 'left' }}>
             <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>Email</div>
             <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '1px' }}>{CONTACT_EMAIL}</div>
           </div>
@@ -420,8 +420,42 @@ function Profile({ session, onBack }) {
   if (infoPage === 'privacy') {
     return (
       <InfoPage title="Privacy Policy" onBack={() => setInfoPage(null)}>
-        <p><strong>What we collect:</strong> your name, department, year, avatar, and skills, plus posts and listings you create.</p>
-        <p style={{ marginTop: '14px' }}><strong>Your control:</strong> edit or remove any of it here, anytime.</p>
+        <p>This Privacy Policy explains what information PolyNet collects, how it's used, and the choices you have. PolyNet is built for students at Harare Polytechnic, and it's designed to collect only what's needed to make the network useful.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>Information we collect</p>
+        <ul style={{ margin: '8px 0 0', paddingLeft: '18px' }}>
+          <li style={{ marginBottom: '6px' }}><strong>Account info</strong> — your name, department, year of study, and the email you sign up with</li>
+          <li style={{ marginBottom: '6px' }}><strong>Profile content</strong> — your avatar, bio, skills, and anything else you choose to add to your profile</li>
+          <li style={{ marginBottom: '6px' }}><strong>Activity you create</strong> — feed posts, comments, likes, PolyMart listings, and messages you send</li>
+          <li><strong>Basic usage data</strong> — things like when you signed up and when you were last active, used to keep the app working properly</li>
+        </ul>
+        <p style={{ marginTop: '10px' }}>We don't ask for or store payment details, national ID numbers, or any information beyond what's needed to run your profile and the features above.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>How we use it</p>
+        <p style={{ marginTop: '8px' }}>Your information is used to run the core features of PolyNet: showing your profile to other students, making you findable through Skills Search, publishing what you post to the Feed and PolyMart, and delivering your messages in Chats. We don't use your data for advertising, and we don't sell it to third parties.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>PolyMart &amp; payments</p>
+        <p style={{ marginTop: '8px' }}>PolyMart is a listings board for students to advertise items and services to each other — <strong>PolyNet does not process payments or handle any part of a transaction.</strong> If you buy or sell through PolyMart, you and the other student arrange payment and exchange directly between yourselves, outside the app. PolyNet only stores the listing details (title, price, description, photos, and category) that you choose to post.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>Messaging</p>
+        <p style={{ marginTop: '8px' }}>Chats messages are stored so your conversations stay available when you come back to the app, and so the person you're messaging can read them. Only the people in a conversation can see its messages.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>Who can see what</p>
+        <p style={{ marginTop: '8px' }}>Your profile, skills, feed posts, and PolyMart listings are visible to other signed-in students on PolyNet, since the whole point of the app is to make your skills discoverable. Direct messages are private to the conversation they're sent in. News Board posts are published by school authorities and visible to everyone on the platform.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>Reporting &amp; moderation</p>
+        <p style={{ marginTop: '8px' }}>If you report a post, listing, or user, the report (including the content reported and your account) is shared with PolyNet's moderators so it can be reviewed. You can also block another user, which stops them from messaging you.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>Where your data lives</p>
+        <p style={{ marginTop: '8px' }}>PolyNet is built on Supabase for its database, authentication, and file storage, and hosted on Vercel. Reasonable technical safeguards (including access controls on the database) are in place to keep your data secure, but no online service can guarantee absolute security.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>Your control over your data</p>
+        <p style={{ marginTop: '8px' }}>You can edit or remove your profile info, skills, posts, and listings at any time from within the app. You can delete individual chats, and you can reach out through Contact PolyNet in Settings to request that your account and associated data be deleted entirely.</p>
+
+        <p style={{ marginTop: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>Changes to this policy</p>
+        <p style={{ marginTop: '8px' }}>As PolyNet grows, this policy may be updated to reflect new features. If changes are significant, we'll do our best to make that clear within the app.</p>
+
+        <p style={{ marginTop: '18px', color: 'var(--text-muted)' }}>Questions about your data? Reach out via Contact PolyNet in Settings.</p>
       </InfoPage>
     )
   }
