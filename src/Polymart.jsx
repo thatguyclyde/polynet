@@ -101,6 +101,77 @@ function VerifiedBadge({ size = 13 }) {
     </span>
   )
 }
+// Shimmer keyframe shared by both skeleton components below.
+function SkeletonStyle() {
+  return (
+    <style>{`
+      @keyframes skeletonShimmer {
+        0% { background-position: -200px 0; }
+        100% { background-position: 200px 0; }
+      }
+    `}</style>
+  )
+}
+
+const shimmerBg = {
+  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
+  backgroundSize: '400px 100%',
+  animation: 'skeletonShimmer 1.4s ease-in-out infinite',
+}
+
+// Mimics one listing card (image + price + title lines) — used both for
+// the main grid's initial load and My Listings' sheet.
+function ListingCardSkeleton({ height = 120 }) {
+  return (
+    <div style={{ background: 'var(--card-bg)', borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--app-border)' }}>
+      <div style={{ width: '100%', height: `${height}px`, ...shimmerBg }} />
+      <div style={{ padding: '10px' }}>
+        <div style={{ width: '45%', height: '15px', borderRadius: '6px', marginBottom: '8px', ...shimmerBg }} />
+        <div style={{ width: '75%', height: '12px', borderRadius: '6px', ...shimmerBg }} />
+      </div>
+    </div>
+  )
+}
+
+// Full-page PolyMart loading state — header, search/filter row, and a
+// 2-column grid of card placeholders, matching the real layout so nothing
+// visibly jumps once listings actually load in.
+function PolyMartSkeleton({ headerBg }) {
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+      <SkeletonStyle />
+      <div style={{ padding: '18px 20px 14px', background: headerBg }}>
+        <div style={{ width: '140px', height: '26px', borderRadius: '6px', marginBottom: '8px', ...shimmerBg }} />
+        <div style={{ width: '110px', height: '13px', borderRadius: '6px', ...shimmerBg }} />
+      </div>
+      <div style={{ padding: '12px 20px 4px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ flex: '0 0 65%', height: '40px', borderRadius: '12px', ...shimmerBg }} />
+          <div style={{ flex: 1, height: '40px', borderRadius: '12px', ...shimmerBg }} />
+        </div>
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '4px' }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} style={{ width: '76px', height: '32px', borderRadius: '20px', flexShrink: 0, ...shimmerBg }} />
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+        {[0, 1, 2, 3, 4, 5].map(i => <ListingCardSkeleton key={i} />)}
+      </div>
+    </div>
+  )
+}
+
+// My Listings sheet — smaller 2-column grid, matching the shorter thumbnail
+// height used inside that panel.
+function MyListingsSkeleton() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+      <SkeletonStyle />
+      {[0, 1, 2, 3].map(i => <ListingCardSkeleton key={i} height={100} />)}
+    </div>
+  )
+}
 
 // Same bottom-sheet confirmation pattern as Feed.jsx / News.jsx, reused
 // here for "mark as sold".
@@ -321,14 +392,8 @@ function MyListingsSheet({ session, onClose, onListingRemoved }) {
           </div>
 
           <div style={{ overflowY: 'auto', flex: 1, padding: '16px 16px 20px' }}>
-            {loading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '50px 0' }}>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-                  ))}
-                </div>
-              </div>
+           {loading ? (
+              <MyListingsSkeleton />
             ) : listings.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '50px 20px' }}>
                 <Icon name="shoppingBag" size={32} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '10px' }} />
@@ -669,20 +734,8 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
   // the existing page/card contrast already works fine.
   const listingsAreaBg = isDark ? 'var(--page-bg)' : '#F5F4FA'
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{
-              width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)',
-              animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-            }} />
-          ))}
-        </div>
-        <style>{`@keyframes dotPulse {0%,100%{opacity:.2;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}`}</style>
-      </div>
-    )
+ if (loading) {
+    return <PolyMartSkeleton headerBg={isDark ? '#000000' : '#FFFFFF'} />
   }
 
   if (selectedListing) {

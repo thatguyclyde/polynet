@@ -89,6 +89,69 @@ function InitialsAvatar({ name, url, size = 44, onClick }) {
     </div>
   )
 }
+// Shimmer keyframe shared by both skeleton components below.
+function SkeletonStyle() {
+  return (
+    <style>{`
+      @keyframes skeletonShimmer {
+        0% { background-position: -200px 0; }
+        100% { background-position: 200px 0; }
+      }
+    `}</style>
+  )
+}
+
+const shimmerBg = {
+  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
+  backgroundSize: '400px 100%',
+  animation: 'skeletonShimmer 1.4s ease-in-out infinite',
+}
+
+// Inbox loading state — mimics the real row layout (avatar + two lines)
+// so the list doesn't visibly "jump" once real conversations load in.
+function InboxSkeleton() {
+  return (
+    <div style={{ padding: '4px 12px' }}>
+      <SkeletonStyle />
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', flexShrink: 0, ...shimmerBg }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ width: '55%', height: '13px', borderRadius: '6px', marginBottom: '8px', ...shimmerBg }} />
+            <div style={{ width: '80%', height: '11px', borderRadius: '6px', ...shimmerBg }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Message list loading state — a few alternating bubble placeholders,
+// roughly matching how a real thread reads (mixed sender sides, varied
+// widths) instead of a uniform block.
+function MessagesSkeleton() {
+  const bubbles = [
+    { mine: false, width: '58%' },
+    { mine: true, width: '42%' },
+    { mine: false, width: '68%' },
+    { mine: true, width: '35%' },
+    { mine: false, width: '50%' },
+  ]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '8px' }}>
+      <SkeletonStyle />
+      {bubbles.map((b, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: b.mine ? 'flex-end' : 'flex-start' }}>
+          <div style={{
+            width: b.width, maxWidth: '75%', height: '38px',
+            borderRadius: b.mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+            ...shimmerBg,
+          }} />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 // Two-button confirmation — used for every "are you sure?" moment (delete
 // chat, delete message, delete request, block user) instead of
@@ -645,13 +708,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
 
       <div style={{ paddingTop: `${headerHeight}px` }}>
       {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            {[0, 1, 2].map(i => (
-              <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-            ))}
-          </div>
-        </div>
+        <InboxSkeleton />
       ) : conversations.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '80px 30px' }}>
           <div style={{ marginBottom: '12px', opacity: 0.35, color: 'var(--app-accent)' }}>
@@ -1195,13 +1252,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
 
         <div style={{ position: 'relative', height: '100%', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
           {loading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                {[0, 1, 2].map(i => (
-                  <div key={i} style={{ width: '9px', height: '9px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-                ))}
-              </div>
-            </div>
+            <MessagesSkeleton />
           ) : messages.length === 0 ? (
             <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', marginTop: '24px' }}>Say hello 👋</p>
           ) : (
