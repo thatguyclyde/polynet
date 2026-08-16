@@ -677,7 +677,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   const blockTargetName = confirmBlockChat ? otherPartyOf(confirmBlockChat, session.user.id).otherName : ''
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div
         ref={headerRef}
         style={{
@@ -706,7 +706,13 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
         </div>
       </div>
 
-      <div style={{ paddingTop: `${headerHeight}px` }}>
+      {/* Scrollable list area — bounded to the viewport (the root above is
+          height:100vh + overflow:hidden, not minHeight:100vh), so this is
+          the only thing that can ever scroll, and only once its content
+          actually exceeds the available space. A short list just sits
+          still — no stray few-px scroll or rubber-band from page/body
+          scrolling, which is what a minHeight:100vh page allowed before. */}
+      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', paddingTop: `${headerHeight}px` }}>
       {loading ? (
         <InboxSkeleton />
       ) : conversations.length === 0 ? (
