@@ -580,7 +580,7 @@ function App() {
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden', paddingBottom: chatThreadOpen ? 0 : '58px' }}>
           <motion.div
             key={page}
-            drag="x"
+           drag={hideChrome ? false : 'x'}
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.5}
             onDragEnd={handleDragEnd}

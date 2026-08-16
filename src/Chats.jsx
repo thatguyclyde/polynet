@@ -8,7 +8,23 @@ import { useTheme } from './ThemeContext'
 const CHAT_BORDER_PURPLE = 'rgba(124,58,237,0.35)'
 const UNREAD_BLUE = '#1D9BF0'
 const VERIFIED_BLUE = '#1D9BF0'
+const BRAND_PURPLE = '#7C3AED'
 const CONV_FIELDS = 'id, listing_id, buyer_id, seller_id, status, last_message_at, buyer_last_read_at, seller_last_read_at, last_sender_id'
+
+// A long-press only counts if the finger stays roughly still — past this
+// many px of drift, it's a scroll gesture, not a hold, and the pending
+// timer gets cancelled.
+const MOVE_THRESHOLD = 10
+
+const CHAT_REPORT_REASONS = [
+  'Harassment or bullying',
+  'Explicit or sexual content',
+  'Hate speech or discrimination',
+  'Threats or violent language',
+  'Unwanted contact',
+  'Spam or scam',
+  'Something else',
+]
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -70,6 +86,141 @@ function InitialsAvatar({ name, url, size = 44, onClick }) {
       ) : (
         initials
       )}
+    </div>
+  )
+}
+
+// Two-button confirmation — used for every "are you sure?" moment (delete
+// chat, delete message, delete request, block user) instead of
+// window.confirm().
+function ConfirmSheet({ title, body, confirmLabel, danger, onConfirm, onCancel }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 18px' }} />
+        <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'center' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>{body}</p>
+        <button
+          onClick={onConfirm}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+            background: danger ? '#EF4444' : BRAND_PURPLE, color: '#fff',
+            fontWeight: 700, fontSize: '14.5px', cursor: 'pointer', marginBottom: '10px',
+          }}
+        >
+          {confirmLabel}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px',
+            border: '1px solid var(--app-border-soft)', background: 'transparent',
+            color: 'var(--text-strong)', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </motion.div>
+    </div>
+  )
+}
+
+// Reason picker — used for reporting a chat, replacing the old plain
+// alert().
+function ReportReasonsSheet({ onSelect, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 12px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 4px' }} />
+        <h3 style={{ margin: '10px 12px 2px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-strong)' }}>Report chat</h3>
+        <p style={{ margin: '0 12px 10px', fontSize: '12px', color: 'var(--text-muted)' }}>What's the issue?</p>
+        {CHAT_REPORT_REASONS.map(reason => (
+          <div
+            key={reason}
+            onClick={() => onSelect(reason)}
+            style={{ padding: '13px 12px', cursor: 'pointer', borderRadius: '12px', fontSize: '13.5px', fontWeight: 600, color: 'var(--text-strong)' }}
+          >
+            {reason}
+          </div>
+        ))}
+      </motion.div>
+    </div>
+  )
+}
+
+// Single-button acknowledgement — used for both success confirmations
+// (e.g. "Reported") and error fallbacks, replacing plain alert().
+function InfoSheet({ title, body, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 18px' }} />
+        <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 800, color: 'var(--text-strong)', textAlign: 'center' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.5 }}>{body}</p>
+        <button
+          onClick={onClose}
+          style={{
+            width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+            background: BRAND_PURPLE, color: '#fff', fontWeight: 700, fontSize: '14.5px', cursor: 'pointer',
+          }}
+        >
+          Got it
+        </button>
+      </motion.div>
     </div>
   )
 }
@@ -236,6 +387,16 @@ async function deleteConversationVerified(conversationId) {
   return { ok: true }
 }
 
+function otherPartyOf(c, myId) {
+  const isSelfChat = c.buyer_id === c.seller_id
+  const isBuyer = c.buyer_id === myId
+  const otherProfile = isSelfChat ? c.buyer : (isBuyer ? c.seller : c.buyer)
+  return {
+    otherUserId: isBuyer ? c.seller_id : c.buyer_id,
+    otherName: isSelfChat ? 'You' : (otherProfile?.full_name || 'PolyNet Student'),
+  }
+}
+
 function ChatActionSheet({ onClose, onDelete, onReport, onBlock, showBlock }) {
   return (
     <div
@@ -285,10 +446,15 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionSheetFor, setActionSheetFor] = useState(null)
+  const [confirmDeleteChat, setConfirmDeleteChat] = useState(null)
+  const [confirmBlockChat, setConfirmBlockChat] = useState(null)
+  const [reportChatTarget, setReportChatTarget] = useState(null)
+  const [infoNotice, setInfoNotice] = useState(null) // { title, body }
   const [deleting, setDeleting] = useState(false)
 
   const pressTimer = useRef(null)
   const longPressTriggered = useRef(false)
+  const touchStartPos = useRef({ x: 0, y: 0 })
 
   // Header height is measured (not hardcoded) so the list's top padding
   // always matches the *actual* rendered header exactly — no matter the
@@ -349,8 +515,13 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
     })
   }
 
-  function handlePressStart(c) {
+  // Long press only fires if the finger stays roughly still — a scroll
+  // gesture that happens to last 480ms no longer gets misread as a hold,
+  // since any real movement past MOVE_THRESHOLD cancels the pending timer.
+  function handlePressStart(c, e) {
     longPressTriggered.current = false
+    const touch = e?.touches?.[0]
+    if (touch) touchStartPos.current = { x: touch.clientX, y: touch.clientY }
     pressTimer.current = setTimeout(() => {
       longPressTriggered.current = true
       if (navigator.vibrate) navigator.vibrate(10)
@@ -358,8 +529,21 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
     }, 480)
   }
 
+  function handleTouchMove(e) {
+    if (!pressTimer.current) return
+    const touch = e.touches?.[0]
+    if (!touch) return
+    const dx = touch.clientX - touchStartPos.current.x
+    const dy = touch.clientY - touchStartPos.current.y
+    if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+      clearTimeout(pressTimer.current)
+      pressTimer.current = null
+    }
+  }
+
   function handlePressEnd() {
     clearTimeout(pressTimer.current)
+    pressTimer.current = null
   }
 
   function handleRowClick(c) {
@@ -370,56 +554,64 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
     openThread(c)
   }
 
-  async function handleDelete() {
-    const c = actionSheetFor
+  async function performDeleteChat() {
+    const c = confirmDeleteChat
+    setConfirmDeleteChat(null)
     if (!c) return
-    setActionSheetFor(null)
-    if (!window.confirm('Delete this chat? This cannot be undone.')) return
     setDeleting(true)
     const result = await deleteConversationVerified(c.id)
     setDeleting(false)
     if (!result.ok) {
-      alert('Could not delete this chat. Please try again.')
+      setInfoNotice({ title: 'Could not delete chat', body: 'Please try again.' })
       fetchConversations(false) // re-sync in case it was a false local removal
       return
     }
     setConversations(prev => prev.filter(x => x.id !== c.id))
   }
 
-  function handleReport() {
-    setActionSheetFor(null)
-    alert('Chat reported. Thank you for helping keep our community safe!')
+  function submitChatReport(reason) {
+    const c = reportChatTarget
+    setReportChatTarget(null)
+    if (!c) return
+    const { otherUserId } = otherPartyOf(c, session.user.id)
+    supabase.from('reports').insert({
+      target_type: 'chat',
+      target_id: c.id,
+      reporter_id: session.user.id,
+      reason,
+      context_preview: c.last_message ? c.last_message.slice(0, 140) : null,
+      context_author_id: otherUserId,
+    }).then(({ error }) => {
+      if (error) console.error('Error submitting report:', error.message)
+    })
+    setInfoNotice({ title: 'Reported', body: 'Thank you for helping keep our community safe.' })
   }
 
   // Same block flow as inside an open thread, just triggered from the
-  // long-press sheet on an inbox row instead. Other user's id/name is
-  // derived from whichever side of the conversation isn't me.
-  async function handleBlock() {
-    const c = actionSheetFor
+  // long-press sheet on an inbox row instead.
+  async function performBlock() {
+    const c = confirmBlockChat
+    setConfirmBlockChat(null)
     if (!c) return
-    setActionSheetFor(null)
     const isSelfChat = c.buyer_id === c.seller_id
     if (isSelfChat) return
 
-    const isBuyer = c.buyer_id === session.user.id
-    const otherUserId = isBuyer ? c.seller_id : c.buyer_id
-    const otherProfile = isBuyer ? c.seller : c.buyer
-    const otherName = otherProfile?.full_name || 'this user'
-
-    if (!window.confirm(`Block ${otherName}? They won't be able to message you again.`)) return
+    const { otherUserId } = otherPartyOf(c, session.user.id)
 
     const { error: blockErr } = await supabase
       .from('blocked_users')
       .insert({ blocker_id: session.user.id, blocked_id: otherUserId })
     if (blockErr) {
       console.error('Error blocking user:', blockErr.message)
-      alert('Could not block this user. Please try again.')
+      setInfoNotice({ title: 'Could not block user', body: 'Please try again.' })
       return
     }
     const result = await deleteConversationVerified(c.id)
     if (!result.ok) console.error('Blocked user but could not delete the conversation.')
     setConversations(prev => prev.filter(x => x.id !== c.id))
   }
+
+  const blockTargetName = confirmBlockChat ? otherPartyOf(confirmBlockChat, session.user.id).otherName : ''
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
@@ -482,10 +674,11 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
               <div
                 key={c.id}
                 onClick={() => handleRowClick(c)}
-                onMouseDown={() => handlePressStart(c)}
+                onMouseDown={(e) => handlePressStart(c, e)}
                 onMouseUp={handlePressEnd}
                 onMouseLeave={handlePressEnd}
-                onTouchStart={() => handlePressStart(c)}
+                onTouchStart={(e) => handlePressStart(c, e)}
+                onTouchMove={handleTouchMove}
                 onTouchEnd={handlePressEnd}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px', cursor: 'pointer',
@@ -527,10 +720,55 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
         {actionSheetFor && (
           <ChatActionSheet
             onClose={() => setActionSheetFor(null)}
-            onDelete={handleDelete}
-            onReport={handleReport}
-            onBlock={handleBlock}
+            onDelete={() => { const c = actionSheetFor; setActionSheetFor(null); setConfirmDeleteChat(c) }}
+            onReport={() => { const c = actionSheetFor; setActionSheetFor(null); setReportChatTarget(c) }}
+            onBlock={() => { const c = actionSheetFor; setActionSheetFor(null); setConfirmBlockChat(c) }}
             showBlock={actionSheetFor.buyer_id !== actionSheetFor.seller_id}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmDeleteChat && (
+          <ConfirmSheet
+            title="Delete this chat?"
+            body="This will remove the conversation permanently. This can't be undone."
+            confirmLabel="Delete Chat"
+            danger
+            onConfirm={performDeleteChat}
+            onCancel={() => setConfirmDeleteChat(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmBlockChat && (
+          <ConfirmSheet
+            title={`Block ${blockTargetName}?`}
+            body="They won't be able to message you again."
+            confirmLabel="Block User"
+            danger
+            onConfirm={performBlock}
+            onCancel={() => setConfirmBlockChat(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {reportChatTarget && (
+          <ReportReasonsSheet
+            onSelect={submitChatReport}
+            onClose={() => setReportChatTarget(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {infoNotice && (
+          <InfoSheet
+            title={infoNotice.title}
+            body={infoNotice.body}
+            onClose={() => setInfoNotice(null)}
           />
         )}
       </AnimatePresence>
@@ -547,12 +785,25 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   const [deciding, setDeciding] = useState(false)
   const [viewingProfileId, setViewingProfileId] = useState(null)
   const [showActionSheet, setShowActionSheet] = useState(false)
+  const [confirmDeleteChatOpen, setConfirmDeleteChatOpen] = useState(false)
+  const [confirmDeleteRequestOpen, setConfirmDeleteRequestOpen] = useState(false)
+  const [confirmBlockOpen, setConfirmBlockOpen] = useState(false)
+  const [reportSheetOpen, setReportSheetOpen] = useState(false)
+  const [infoNotice, setInfoNotice] = useState(null) // { title, body }
+  const [deleteMessageId, setDeleteMessageId] = useState(null)
   // Fetched independently of whatever the caller passed in — a chat opened
   // via "Message Seller" (Polymart/Feed) won't have otherIsAdmin set on the
   // conversation object the way one opened from the Inbox row does, so this
   // stays the single source of truth regardless of entry point.
   const [otherIsAdmin, setOtherIsAdmin] = useState(!!conversation.otherIsAdmin)
   const bottomRef = useRef(null)
+
+  // Message long-press-to-delete — same stationary-finger requirement as
+  // the Inbox row long press, so scrolling the message list never gets
+  // misread as a hold on a bubble.
+  const messagePressTimer = useRef(null)
+  const messagePressTriggered = useRef(false)
+  const messageTouchStart = useRef({ x: 0, y: 0 })
 
   const isSelfChat = conversation.buyerId === conversation.sellerId
   const isRecipient = !isSelfChat && session.user.id === conversation.sellerId
@@ -676,13 +927,13 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
     setDeciding(false)
   }
 
-  async function deleteRequest() {
-    if (!window.confirm('Delete this message request? This cannot be undone.')) return
+  async function performDeleteRequest() {
+    setConfirmDeleteRequestOpen(false)
     setDeciding(true)
     const result = await deleteConversationVerified(conversation.id)
     setDeciding(false)
     if (!result.ok) {
-      alert('Could not delete this request. Please try again.')
+      setInfoNotice({ title: 'Could not delete request', body: 'Please try again.' })
       return
     }
     onBack()
@@ -719,32 +970,40 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
     setSending(false)
   }
 
-  async function handleDeleteChat() {
-    setShowActionSheet(false)
-    if (!window.confirm('Delete this chat? This cannot be undone.')) return
+  async function performDeleteChat() {
+    setConfirmDeleteChatOpen(false)
     const result = await deleteConversationVerified(conversation.id)
     if (!result.ok) {
-      alert('Could not delete this chat. Please try again.')
+      setInfoNotice({ title: 'Could not delete chat', body: 'Please try again.' })
       return
     }
     onConversationDeleted?.()
     onBack()
   }
 
-  function handleReportChat() {
-    setShowActionSheet(false)
-    alert('Chat reported. Thank you for helping keep our community safe!')
+  function submitChatReport(reason) {
+    setReportSheetOpen(false)
+    supabase.from('reports').insert({
+      target_type: 'chat',
+      target_id: conversation.id,
+      reporter_id: session.user.id,
+      reason,
+      context_preview: `Chat with ${conversation.otherName}`,
+      context_author_id: conversation.otherUserId,
+    }).then(({ error }) => {
+      if (error) console.error('Error submitting report:', error.message)
+    })
+    setInfoNotice({ title: 'Reported', body: 'Thank you for helping keep our community safe.' })
   }
 
-  async function handleBlockUser() {
-    setShowActionSheet(false)
-    if (!window.confirm(`Block ${conversation.otherName}? They won't be able to message you again.`)) return
+  async function performBlockUser() {
+    setConfirmBlockOpen(false)
     const { error: blockErr } = await supabase
       .from('blocked_users')
       .insert({ blocker_id: session.user.id, blocked_id: conversation.otherUserId })
     if (blockErr) {
       console.error('Error blocking user:', blockErr.message)
-      alert('Could not block this user. Please try again.')
+      setInfoNotice({ title: 'Could not block user', body: 'Please try again.' })
       return
     }
     const result = await deleteConversationVerified(conversation.id)
@@ -758,12 +1017,75 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
     setViewingProfileId(conversation.otherUserId)
   }
 
+  // --- Message long-press-to-delete ------------------------------------
+  // Only meaningful on your own messages — deleting someone else's message
+  // out from under them isn't something a regular chat participant should
+  // be able to do.
+  function handleMessagePressStart(m, mine, e) {
+    if (!mine) return
+    messagePressTriggered.current = false
+    const touch = e?.touches?.[0]
+    if (touch) messageTouchStart.current = { x: touch.clientX, y: touch.clientY }
+    messagePressTimer.current = setTimeout(() => {
+      messagePressTriggered.current = true
+      if (navigator.vibrate) navigator.vibrate(10)
+      setDeleteMessageId(m.id)
+    }, 480)
+  }
+
+  function handleMessageTouchMove(e) {
+    if (!messagePressTimer.current) return
+    const touch = e.touches?.[0]
+    if (!touch) return
+    const dx = touch.clientX - messageTouchStart.current.x
+    const dy = touch.clientY - messageTouchStart.current.y
+    if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+      clearTimeout(messagePressTimer.current)
+      messagePressTimer.current = null
+    }
+  }
+
+  function handleMessagePressEnd() {
+    clearTimeout(messagePressTimer.current)
+    messagePressTimer.current = null
+  }
+
+  async function performDeleteMessage() {
+    const messageId = deleteMessageId
+    setDeleteMessageId(null)
+    if (!messageId) return
+    const { error } = await supabase.from('chat_messages').delete().eq('id', messageId)
+    if (error) {
+      console.error('Error deleting message:', error.message)
+      setInfoNotice({ title: 'Could not delete message', body: 'Please try again.' })
+      return
+    }
+    setMessages(prev => prev.filter(m => m.id !== messageId))
+  }
+  // Swipe right (finger moving left→right) to exit the chat, matching
+  // the gesture already used to close listing details elsewhere in the
+  // app. Only responds to a rightward drag past a small threshold — a
+  // leftward swipe or a short/accidental drag does nothing.
+  function handleThreadDragEnd(event, info) {
+    const distanceThreshold = 60
+    const velocityThreshold = 500
+    if (info.offset.x > distanceThreshold || info.velocity.x > velocityThreshold) {
+      onBack()
+    }
+  }
+
   return (
     // height (not minHeight) + overflow:hidden bounds this to the viewport,
     // so the message list's overflowY:auto below is the thing that scrolls
     // — not the page. That's also what keeps the "PolyNet" watermark fixed:
     // it lives in a sibling container that no longer grows past the screen.
-    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <motion.div
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.35}
+      onDragEnd={handleThreadDragEnd}
+      style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}
+    >
       {/* HEADER — fixed, stays put regardless of message-list scroll */}
       <div
         ref={headerRef}
@@ -830,7 +1152,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
               Keep
             </button>
             <button
-              onClick={deleteRequest}
+              onClick={() => setConfirmDeleteRequestOpen(true)}
               disabled={deciding}
               style={{ flex: 1, padding: '10px', borderRadius: '12px', border: '1px solid var(--danger)', background: 'transparent', color: 'var(--danger)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
             >
@@ -916,13 +1238,22 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
                           onClick={!isSelfChat ? openOtherProfile : undefined}
                         />
                       )}
-                      <div style={{
-                        maxWidth: '75%', padding: '10px 14px', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                        background: mine ? 'var(--app-accent)' : 'var(--card-bg)',
-                        color: mine ? '#fff' : 'var(--text-body)',
-                        border: mine ? 'none' : '1px solid var(--app-border)',
-                        fontSize: '13.5px', lineHeight: 1.5, textAlign: 'left',
-                      }}>
+                      <div
+                        onMouseDown={(e) => handleMessagePressStart(m, mine, e)}
+                        onMouseUp={handleMessagePressEnd}
+                        onMouseLeave={handleMessagePressEnd}
+                        onTouchStart={(e) => handleMessagePressStart(m, mine, e)}
+                        onTouchMove={handleMessageTouchMove}
+                        onTouchEnd={handleMessagePressEnd}
+                        style={{
+                          maxWidth: '75%', padding: '10px 14px', borderRadius: mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                          background: mine ? 'var(--app-accent)' : 'var(--card-bg)',
+                          color: mine ? '#fff' : 'var(--text-body)',
+                          border: mine ? 'none' : '1px solid var(--app-border)',
+                          fontSize: '13.5px', lineHeight: 1.5, textAlign: 'left',
+                          userSelect: 'none', WebkitUserSelect: 'none',
+                        }}
+                      >
                         {m.content}
                       </div>
                     </div>
@@ -979,14 +1310,85 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         {showActionSheet && (
           <ChatActionSheet
             onClose={() => setShowActionSheet(false)}
-            onDelete={handleDeleteChat}
-            onReport={handleReportChat}
-            onBlock={handleBlockUser}
+            onDelete={() => { setShowActionSheet(false); setConfirmDeleteChatOpen(true) }}
+            onReport={() => { setShowActionSheet(false); setReportSheetOpen(true) }}
+            onBlock={() => { setShowActionSheet(false); setConfirmBlockOpen(true) }}
             showBlock={!isSelfChat}
           />
         )}
       </AnimatePresence>
-    </div>
+
+      <AnimatePresence>
+        {confirmDeleteChatOpen && (
+          <ConfirmSheet
+            title="Delete this chat?"
+            body="This will remove the conversation permanently. This can't be undone."
+            confirmLabel="Delete Chat"
+            danger
+            onConfirm={performDeleteChat}
+            onCancel={() => setConfirmDeleteChatOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmDeleteRequestOpen && (
+          <ConfirmSheet
+            title="Delete this message request?"
+            body="This can't be undone."
+            confirmLabel="Delete Request"
+            danger
+            onConfirm={performDeleteRequest}
+            onCancel={() => setConfirmDeleteRequestOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmBlockOpen && (
+          <ConfirmSheet
+            title={`Block ${conversation.otherName}?`}
+            body="They won't be able to message you again."
+            confirmLabel="Block User"
+            danger
+            onConfirm={performBlockUser}
+            onCancel={() => setConfirmBlockOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {reportSheetOpen && (
+          <ReportReasonsSheet
+            onSelect={submitChatReport}
+            onClose={() => setReportSheetOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteMessageId && (
+          <ConfirmSheet
+            title="Delete this message?"
+            body="This will remove it for everyone in this chat. This can't be undone."
+            confirmLabel="Delete Message"
+            danger
+            onConfirm={performDeleteMessage}
+            onCancel={() => setDeleteMessageId(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {infoNotice && (
+          <InfoSheet
+            title={infoNotice.title}
+            body={infoNotice.body}
+            onClose={() => setInfoNotice(null)}
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
   )
 }
 
@@ -995,6 +1397,7 @@ function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
   const [openConversation, setOpenConversation] = useState(null)
   const [resolving, setResolving] = useState(false)
   const [inboxRefreshKey, setInboxRefreshKey] = useState(0)
+  const [infoNotice, setInfoNotice] = useState(null) // { title, body }
 
   useEffect(() => {
     onThreadOpenChange?.(!!openConversation)
@@ -1008,9 +1411,9 @@ function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
       if (cancelled) return
 
       if (result?.blocked) {
-        alert("You can't message this user.")
+        setInfoNotice({ title: "Can't message this user", body: "You can't message this user." })
       } else if (result?.error) {
-        alert('Could not open this chat. Please try again.')
+        setInfoNotice({ title: 'Could not open chat', body: 'Please try again.' })
       } else if (result) {
         setOpenConversation(result)
       }
@@ -1061,6 +1464,16 @@ function Chats({ session, pendingChat, onClearPending, onThreadOpenChange }) {
               onConversationDeleted={() => setInboxRefreshKey(k => k + 1)}
             />
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {infoNotice && (
+          <InfoSheet
+            title={infoNotice.title}
+            body={infoNotice.body}
+            onClose={() => setInfoNotice(null)}
+          />
         )}
       </AnimatePresence>
     </div>
