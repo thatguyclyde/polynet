@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
-import { NewsSkeleton } from './Skeleton'
 import { useTheme } from './ThemeContext'
 import { getDisplayName } from './DisplayName'
 
@@ -116,6 +115,62 @@ function DislikeButton({ isDisliked, count, pulseKey, onClick }) {
       <span style={{ fontWeight: 700, fontSize: '13px', color: isDisliked ? DISLIKE_COLOR : 'var(--text-muted)' }}>
         {count > 0 ? count : ''}
       </span>
+    </div>
+  )
+}
+
+// Shimmer keyframe shared by the skeleton pieces below — same pattern as
+// PolyMart's ListingsGridSkeleton.
+function SkeletonStyle() {
+  return (
+    <style>{`
+      @keyframes skeletonShimmer {
+        0% { background-position: -200px 0; }
+        100% { background-position: 200px 0; }
+      }
+    `}</style>
+  )
+}
+
+const shimmerBg = {
+  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
+  backgroundSize: '400px 100%',
+  animation: 'skeletonShimmer 1.4s ease-in-out infinite',
+}
+
+// Mimics one news card. Alternates image/text-only shape so the loading
+// state doesn't look identical to every real card underneath it.
+function NewsCardSkeleton({ withImage }) {
+  return (
+    <div style={{
+      background: 'var(--card-bg)', borderRadius: '22px', overflow: 'hidden',
+      border: '1px solid var(--app-border)', boxShadow: 'var(--shadow-card)',
+    }}>
+      {withImage && <div style={{ width: '100%', height: '180px', ...shimmerBg }} />}
+      <div style={{ padding: '16px' }}>
+        {!withImage && (
+          <div style={{ width: '96px', height: '18px', borderRadius: '999px', marginBottom: '10px', ...shimmerBg }} />
+        )}
+        <div style={{ width: '92%', height: withImage ? '12px' : '16px', borderRadius: '6px', marginBottom: '8px', ...shimmerBg }} />
+        <div style={{ width: '70%', height: withImage ? '12px' : '16px', borderRadius: '6px', marginBottom: '14px', ...shimmerBg }} />
+        <div style={{ paddingTop: '10px', borderTop: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ width: '110px', height: '11px', borderRadius: '6px', ...shimmerBg }} />
+          <div style={{ width: '60px', height: '15px', borderRadius: '6px', ...shimmerBg }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Feed of placeholder cards shown while articles + read-state are loading.
+function NewsSkeleton() {
+  return (
+    <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <SkeletonStyle />
+      <NewsCardSkeleton withImage />
+      <NewsCardSkeleton />
+      <NewsCardSkeleton withImage />
+      <NewsCardSkeleton />
     </div>
   )
 }
@@ -332,6 +387,7 @@ function News({ session, isAdmin }) {
   const [openMenuId, setOpenMenuId] = useState(null)
   const [viewingArticle, setViewingArticle] = useState(null)
   const tapTimer = useRef(null)
+  const fileInputRef = useRef(null)
 
   const [deleteArticleId, setDeleteArticleId] = useState(null)
   const [downloadArticle, setDownloadArticle] = useState(null)
@@ -415,14 +471,18 @@ function News({ session, isAdmin }) {
     setLoading(false)
   }
 
+  // Picking a photo (from anywhere the hidden input is triggered) jumps
+  // straight to the image step — no extra tap needed in between.
   async function handleImageSelect(e) {
     const file = e.target.files[0]
     if (!file) return
+    setComposerStep('image')
     setUploading(true)
     const compressed = await compressImage(file)
     setImageFile(compressed)
     setImagePreview(URL.createObjectURL(compressed))
     setUploading(false)
+    e.target.value = null
   }
 
   async function handlePost() {
@@ -770,6 +830,17 @@ function News({ session, isAdmin }) {
                   </div>
                 </div>
 
+                {/* Always mounted so it's reachable straight from the
+                    "choose" step — tapping Image below fires this directly,
+                    no intermediate tap needed. */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  style={{ display: 'none' }}
+                />
+
                 <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
                   {composerStep === 'choose' && (
                     <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -784,14 +855,14 @@ function News({ session, isAdmin }) {
                         <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Icon name="megaphone" size={20} color="var(--app-accent)" />
                         </div>
-                        <div>
+                        <div style={{ textAlign: 'left' }}>
                           <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Announcement</div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>A bold, text-only post</div>
                         </div>
                       </div>
 
                       <div
-                        onClick={() => setComposerStep('image')}
+                        onClick={() => fileInputRef.current?.click()}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
                           borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
@@ -801,7 +872,7 @@ function News({ session, isAdmin }) {
                         <div style={{ width: '44px', height: '44px', borderRadius: '13px', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Icon name="camera" size={20} color="var(--app-accent)" />
                         </div>
-                        <div>
+                        <div style={{ textAlign: 'left' }}>
                           <div style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-strong)' }}>Image</div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Post a picture with a caption</div>
                         </div>

@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
-import { ProfileSkeleton } from './Skeleton'
 import { getDisplayName } from './DisplayName'
 import ReportsScreen from './ReportsScreen'
 
@@ -359,6 +358,14 @@ function Profile({ session, onBack }) {
     setConfirmModal('save')
   }
 
+  function cancelEdit() {
+    setEditMode(false)
+    setAvatarFile(null)
+    setAvatarPreview(null)
+    setMessage('')
+    fetchProfile()
+  }
+
   function handleAvatarTap() {
     if (!editMode) setViewingAvatar(true)
   }
@@ -381,7 +388,7 @@ function Profile({ session, onBack }) {
         <div style={{ padding: '18px 20px 12px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', position: 'sticky', top: 0, zIndex: 20 }}>
           <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-strong)' }}>My Profile</h1>
         </div>
-        <ProfileSkeleton />
+        <ProfileLoadingSkeleton />
       </div>
     )
   }
@@ -461,8 +468,11 @@ function Profile({ session, onBack }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', paddingBottom: editMode ? '110px' : '24px' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', paddingBottom: '24px' }}>
 
+      {/* Header — Save lives here, top-right, next to Cancel while editing.
+          justify-content: space-between keeps the title pinned left and
+          this action group flush against the right edge. */}
       <div style={{
         padding: '16px 20px',
         background: 'var(--card-bg)',
@@ -479,40 +489,104 @@ function Profile({ session, onBack }) {
         </h1>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {editMode && (
-            <span
-              onClick={() => {
-                setEditMode(false)
-                setAvatarFile(null)
-                setAvatarPreview(null)
-                fetchProfile()
-              }}
-              style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: '4px' }}
-            >
-              Cancel
-            </span>
-          )}
-
-          {!editMode && onBack && (
-            <button
-              onClick={onBack}
-              aria-label="Back"
-              style={{
-                cursor: 'pointer',
-                padding: '7px 16px',
-                borderRadius: '999px',
-                border: '1px solid var(--app-border-soft)',
-                background: 'var(--page-bg)',
-                color: 'var(--text-strong)',
-                fontWeight: 700,
-                fontSize: '13px',
-              }}
-            >
-              Back
-            </button>
-          )}
+          <AnimatePresence mode="wait">
+            {editMode ? (
+              <motion.div
+                key="edit-actions"
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 8 }}
+                transition={{ duration: 0.18 }}
+                style={{ display: 'flex', alignItems: 'center', gap: '14px' }}
+              >
+                <span
+                  onClick={cancelEdit}
+                  style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Cancel
+                </span>
+                <motion.button
+                  onClick={requestSave}
+                  disabled={saving || uploading}
+                  whileTap={{ scale: 0.94 }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '7px 16px', borderRadius: '999px', border: 'none',
+                    background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '13px',
+                    cursor: saving || uploading ? 'default' : 'pointer',
+                    opacity: saving || uploading ? 0.75 : 1,
+                    boxShadow: 'var(--shadow-accent)',
+                  }}
+                >
+                  {saving ? (
+                    <>
+                      <div style={{ display: 'flex', gap: '3px' }}>
+                        {[0, 1, 2].map(i => (
+                          <div key={i} style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#fff', animation: `dotPulse 1.2s ease-in-out ${i * 0.15}s infinite` }} />
+                        ))}
+                      </div>
+                      Saving
+                    </>
+                  ) : uploading ? (
+                    'Processing...'
+                  ) : (
+                    <>
+                      <Icon name="check" size={13} />
+                      Save
+                    </>
+                  )}
+                </motion.button>
+              </motion.div>
+            ) : (
+              onBack && (
+                <motion.button
+                  key="back-button"
+                  onClick={onBack}
+                  aria-label="Back"
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.18 }}
+                  style={{
+                    cursor: 'pointer',
+                    padding: '7px 16px',
+                    borderRadius: '999px',
+                    border: '1px solid var(--app-border-soft)',
+                    background: 'var(--page-bg)',
+                    color: 'var(--text-strong)',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                  }}
+                >
+                  Back
+                </motion.button>
+              )
+            )}
+          </AnimatePresence>
         </div>
       </div>
+
+      {/* Message banner — replaces the old bottom-bar toast. Slides down
+          from under the header for both validation errors and success. */}
+      <AnimatePresence>
+        {message && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <p style={{
+              margin: 0, padding: '10px 20px', fontSize: '12.5px', textAlign: 'center', fontWeight: 700,
+              background: message.startsWith('✓') ? 'rgba(22,163,74,0.1)' : 'rgba(239,68,68,0.1)',
+              color: message.startsWith('✓') ? '#16A34A' : '#EF4444',
+            }}>
+              {message}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div style={{ padding: '16px' }}>
 
@@ -715,31 +789,6 @@ function Profile({ session, onBack }) {
         )}
       </div>
 
-      {editMode && (
-        <div style={{
-          position: 'fixed', bottom: '70px', left: 0, right: 0,
-          padding: '10px 16px', background: 'var(--card-bg)',
-          borderTop: '1px solid var(--app-border)', zIndex: 30,
-        }}>
-          {message && (
-            <p style={{ fontSize: '12.5px', textAlign: 'center', fontWeight: 700, margin: '0 0 8px', color: message.startsWith('✓') ? '#16A34A' : '#EF4444' }}>
-              {message}
-            </p>
-          )}
-          <button
-            onClick={requestSave}
-            disabled={saving || uploading}
-            style={{
-              width: '100%', padding: '13px', borderRadius: '14px', border: 'none',
-              background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '14px',
-              cursor: 'pointer', boxShadow: 'var(--shadow-accent)',
-            }}
-          >
-            {saving ? 'Saving...' : uploading ? 'Processing photo...' : 'Save Changes'}
-          </button>
-        </div>
-      )}
-
       <AnimatePresence>
         {viewingAvatar && (
           <motion.div
@@ -815,6 +864,13 @@ function Profile({ session, onBack }) {
           onCancel={() => setConfirmModal(null)}
         />
       )}
+
+      <style>{`
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.3; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.15); }
+        }
+      `}</style>
     </div>
   )
 }
@@ -835,6 +891,55 @@ function Toggle({ checked, onChange }) {
   return (
     <div onClick={onChange} style={{ width: '42px', height: '24px', borderRadius: '12px', background: checked ? 'var(--app-accent)' : 'var(--app-border-soft)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s' }}>
       <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '3px', left: checked ? '21px' : '3px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+    </div>
+  )
+}
+
+// Shimmering skeleton for the initial profile load — mirrors the real
+// layout (avatar card + preferences list) so nothing visually "jumps"
+// once the real data arrives, and replaces the old plain three-dot
+// spinner that used to show here.
+function ProfileSkeletonStyle() {
+  return (
+    <style>{`
+      @keyframes profileSkeletonShimmer {
+        0% { background-position: -200px 0; }
+        100% { background-position: 200px 0; }
+      }
+    `}</style>
+  )
+}
+
+const profileShimmerBg = {
+  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
+  backgroundSize: '400px 100%',
+  animation: 'profileSkeletonShimmer 1.4s ease-in-out infinite',
+}
+
+function ProfileLoadingSkeleton() {
+  return (
+    <div style={{ padding: '16px' }}>
+      <ProfileSkeletonStyle />
+
+      <div style={{
+        borderRadius: '22px', border: '1px solid var(--app-border)', background: 'var(--card-bg)',
+        padding: '28px 18px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center',
+      }}>
+        <div style={{ width: '86px', height: '86px', borderRadius: '50%', ...profileShimmerBg }} />
+        <div style={{ width: '140px', height: '16px', borderRadius: '6px', marginTop: '14px', ...profileShimmerBg }} />
+        <div style={{ width: '100px', height: '12px', borderRadius: '6px', marginTop: '8px', ...profileShimmerBg }} />
+        <div style={{ width: '110px', height: '32px', borderRadius: '999px', marginTop: '16px', ...profileShimmerBg }} />
+      </div>
+
+      <div style={{ width: '90px', height: '11px', borderRadius: '5px', margin: '20px 4px 8px', ...profileShimmerBg }} />
+      <div style={{ background: 'var(--card-bg)', borderRadius: '18px', border: '1px solid var(--app-border)', padding: '4px 14px' }}>
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 0', borderBottom: i === 3 ? 'none' : '1px solid var(--app-border)' }}>
+            <div style={{ width: '30px', height: '30px', borderRadius: '9px', flexShrink: 0, ...profileShimmerBg }} />
+            <div style={{ flex: 1, height: '13px', borderRadius: '6px', ...profileShimmerBg }} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

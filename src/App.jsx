@@ -692,7 +692,9 @@ function App() {
                   background: 'var(--page-bg)', zIndex: 201, overflowY: 'auto',
                 }}
               >
-                <Profile session={session} onBack={() => setShowProfile(false)} />
+                <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--page-bg)' }} />}>
+                  <Profile session={session} onBack={() => setShowProfile(false)} />
+                </Suspense>
               </motion.div>
             </>
           )}
