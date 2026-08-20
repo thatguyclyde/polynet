@@ -1,8 +1,26 @@
+// Shimmering sweep instead of a plain opacity pulse: a soft highlight band
+// slides left-to-right across each block on a loop. Keyframes are injected
+// once per skeleton screen (harmless if duplicated) so Block never depends
+// on a global stylesheet defining them.
+function SkeletonShimmerStyle() {
+  return (
+    <style>{`
+      @keyframes skeletonShimmer {
+        0% { background-position: 150% 0; }
+        100% { background-position: -50% 0; }
+      }
+    `}</style>
+  )
+}
+
 function Block({ width = '100%', height = '14px', radius = '6px', style = {} }) {
   return (
     <div style={{
-      width, height, borderRadius: radius, background: 'var(--app-border)',
-      animation: 'skeletonPulse 1.4s ease-in-out infinite', ...style,
+      width, height, borderRadius: radius,
+      background: 'linear-gradient(90deg, var(--app-border) 25%, rgba(255,255,255,0.5) 50%, var(--app-border) 75%)',
+      backgroundSize: '200% 100%',
+      animation: 'skeletonShimmer 0.9s linear infinite',
+      ...style,
     }} />
   )
 }
@@ -10,6 +28,7 @@ function Block({ width = '100%', height = '14px', radius = '6px', style = {} }) 
 function FeedSkeleton() {
   return (
     <div>
+      <SkeletonShimmerStyle />
       {[0, 1, 2].map(i => (
         <div key={i} style={{ borderBottom: '8px solid var(--app-border)' }}>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '12px 16px' }}>
@@ -33,6 +52,7 @@ function FeedSkeleton() {
 function NewsSkeleton() {
   return (
     <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <SkeletonShimmerStyle />
       {[0, 1, 2].map(i => (
         <div key={i} style={{ borderRadius: '22px', border: '1px solid var(--app-border)', overflow: 'hidden' }}>
           <Block width="100%" height="180px" radius="0" />
@@ -51,6 +71,7 @@ function NewsSkeleton() {
 function PolymartSkeleton() {
   return (
     <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+      <SkeletonShimmerStyle />
       {[0, 1, 2, 3, 4, 5].map(i => (
         <div key={i} style={{ borderRadius: '16px', border: '1px solid var(--app-border)', overflow: 'hidden' }}>
           <Block width="100%" height="120px" radius="0" />
@@ -68,6 +89,7 @@ function PolymartSkeleton() {
 function ProfileSkeleton() {
   return (
     <div style={{ padding: '20px' }}>
+      <SkeletonShimmerStyle />
       <div style={{ background: 'var(--card-bg)', borderRadius: '24px', border: '1px solid var(--app-border)', padding: '20px' }}>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
           <Block width="82px" height="82px" radius="50%" />

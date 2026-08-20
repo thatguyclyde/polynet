@@ -174,6 +174,23 @@ function App() {
   // lives here.
   const [feedScrollY, setFeedScrollY] = useState(0)
 
+  // True while the on-screen keyboard is visible (e.g. typing a comment).
+  // The layout viewport doesn't shrink when the keyboard opens, but the
+  // visual viewport does — comparing the two is the standard way to detect
+  // it. Used to hide the fixed bottom tab bar so it doesn't float on top
+  // of the keyboard.
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const layoutHeight = window.innerHeight
+    function handleViewportChange() {
+      setKeyboardOpen(layoutHeight - vv.height > 120)
+    }
+    vv.addEventListener('resize', handleViewportChange)
+    return () => vv.removeEventListener('resize', handleViewportChange)
+  }, [])
+
   // True if a signup just happened and we're waiting on the person to tap
   // the confirmation link in their email. Persisted to sessionStorage so it
   // survives them switching away to their email app and back to this tab.
@@ -612,8 +629,9 @@ function App() {
         </div>
         </Suspense>
 
-        {/* Bottom tab bar — numbered badges instead of plain dots. */}
-        {!hideChrome && (
+        {/* Bottom tab bar — numbered badges instead of plain dots. Hidden
+            while the keyboard is up so it doesn't float on top of it. */}
+        {!hideChrome && !keyboardOpen && (
           <div style={{
             position: 'fixed',
             bottom: 0, left: 0, right: 0,

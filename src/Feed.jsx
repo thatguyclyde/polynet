@@ -376,29 +376,9 @@ function InfoSheet({ title, body, onClose }) {
 
 function Feed({ session, onStartChat, scrollY = 0 }) {
   const { isDark } = useTheme()
-
-  // Tracks whether the on-screen keyboard is visible, using the
-  // visualViewport API (the layout viewport doesn't shrink when the
-  // keyboard opens, but the visual viewport does). We toggle a
-  // `keyboard-open` class on <body> so any fixed-position UI — like the
-  // bottom navigation tabs — can hide itself while typing instead of
-  // floating on top of the keyboard. If your bottom nav lives outside
-  // this component (e.g. in App.jsx), add a rule such as:
-  //   body.keyboard-open .your-bottom-nav-class { display: none; }
-  useEffect(() => {
-    const vv = window.visualViewport
-    if (!vv) return
-    const layoutHeight = window.innerHeight
-    function handleViewportChange() {
-      const keyboardLikelyOpen = layoutHeight - vv.height > 120
-      document.body.classList.toggle('keyboard-open', keyboardLikelyOpen)
-    }
-    vv.addEventListener('resize', handleViewportChange)
-    return () => {
-      vv.removeEventListener('resize', handleViewportChange)
-      document.body.classList.remove('keyboard-open')
-    }
-  }, [])
+  // Note: keyboard-visibility detection for hiding the bottom tab bar now
+  // lives in App.jsx (where the tab bar itself is rendered), so it works
+  // consistently no matter which page is active.
 
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
