@@ -677,7 +677,7 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
   const blockTargetName = confirmBlockChat ? otherPartyOf(confirmBlockChat, session.user.id).otherName : ''
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <div style={{ minHeight: '100%', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
       <div
         ref={headerRef}
         style={{
@@ -706,13 +706,16 @@ function Inbox({ session, onOpenThread, isDark, refreshSignal }) {
         </div>
       </div>
 
-      {/* Scrollable list area — bounded to the viewport (the root above is
-          height:100vh + overflow:hidden, not minHeight:100vh), so this is
-          the only thing that can ever scroll, and only once its content
-          actually exceeds the available space. A short list just sits
-          still — no stray few-px scroll or rubber-band from page/body
-          scrolling, which is what a minHeight:100vh page allowed before. */}
-      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', paddingTop: `${headerHeight}px` }}>
+      {/* No independent scroll container here on purpose — App.jsx's page
+          wrapper is already the one scrollable+draggable region shared by
+          every tab (it's also what drives the swipe-to-switch-tabs
+          gesture). Giving Inbox its own nested overflowY:auto region made
+          two containers fight over the same touch gesture, which is what
+          locked the tab swipe. minHeight:'100%' (the actual space left
+          after the header/tab bar) instead of '100vh' (the raw device
+          viewport, taller than that) is what stops the stray scroll when
+          the list is short — no second scroll container needed for that. */}
+      <div style={{ paddingTop: `${headerHeight}px` }}>
       {loading ? (
         <InboxSkeleton />
       ) : conversations.length === 0 ? (
