@@ -6,6 +6,7 @@ import { isExpiredAuthError, recoverExpiredSession } from './authRecovery'
 import SplashScreen from './SplashScreen'
 import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
+import TermsScreen from './TermsScreen'
 import React, { Suspense, lazy } from 'react'
 
 const Feed = lazy(() => import('./Feed'))
@@ -152,6 +153,10 @@ function App() {
   // never briefly flashes the walkthrough before checkUserProfile corrects
   // it; checkUserProfile sets the real value once it knows.
   const [hasSeenWalkthrough, setHasSeenWalkthrough] = useState(true)
+  // Persisted (DB-backed) — whether this account has accepted the Terms &
+  // Conditions. Same "default true" reasoning as hasSeenWalkthrough above:
+  // avoids a flash of TermsScreen before checkUserProfile has actually run.
+  const [termsAccepted, setTermsAccepted] = useState(true)
   const [checking, setChecking] = useState(true)
   const [networkError, setNetworkError] = useState(false)
   const [retrying, setRetrying] = useState(false)
@@ -213,7 +218,7 @@ function App() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('full_name, department, year_of_study, avatar_url, is_admin, admin_title, has_seen_walkthrough')
+        .select('full_name, department, year_of_study, avatar_url, is_admin, admin_title, has_seen_walkthrough, terms_accepted')
         .eq('id', userSession.user.id)
         .maybeSingle()
 
@@ -231,6 +236,7 @@ function App() {
       )
       setOnboarded(!!complete)
       setHasSeenWalkthrough(!!data?.has_seen_walkthrough)
+      setTermsAccepted(!!data?.terms_accepted)
       if (data?.avatar_url) setMyAvatar(data.avatar_url)
     } catch (err) {
       if (isExpiredAuthError(err)) {
@@ -240,6 +246,7 @@ function App() {
         setOnboarded(null)
         setIsAdminUser(false)
         setHasSeenWalkthrough(true)
+        setTermsAccepted(true)
         setNetworkError(false)
         setChecking(false)
         return
@@ -276,6 +283,7 @@ function App() {
         setOnboarded(null)
         setIsAdminUser(false)
         setHasSeenWalkthrough(true)
+        setTermsAccepted(true)
         setChecking(false)
       }
     })
@@ -306,6 +314,7 @@ function App() {
           setOnboarded(null)
           setIsAdminUser(false)
           setHasSeenWalkthrough(true)
+          setTermsAccepted(true)
           setNetworkError(false)
           setChecking(false)
           setRetrying(false)
@@ -410,6 +419,19 @@ function App() {
     }
     setHasSeenWalkthrough(true)
   }
+
+  // TermsScreen persists acceptance to the DB itself before calling this —
+  // so by the time we get here it's already durable, and this just needs
+  // to flip local state to let the person through to the Walkthrough.
+  function handleTermsAgree() {
+    setTermsAccepted(true)
+  }
+
+  // TermsScreen already called supabase.auth.signOut() before this fires —
+  // that triggers the onAuthStateChange listener above, which resets
+  // session/onboarded/etc. and sends the person back to AuthScreen. Nothing
+  // further to do here.
+  function handleTermsReject() {}
 
   useEffect(() => {
     if (!session) return
@@ -539,7 +561,12 @@ function App() {
     return <Onboarding session={session} onComplete={() => setOnboarded(true)} />
   }
 
-  if (session && onboarded === true && !hasSeenWalkthrough) {
+  // Shown once, right after onboarding finishes, before the Walkthrough.
+  if (session && onboarded === true && !termsAccepted) {
+    return <TermsScreen session={session} onAgree={handleTermsAgree} onReject={handleTermsReject} />
+  }
+
+  if (session && onboarded === true && termsAccepted && !hasSeenWalkthrough) {
     return <Walkthrough onFinish={handleWalkthroughFinish} />
   }
 
@@ -547,7 +574,7 @@ function App() {
     return <AuthScreen onSignUpSuccess={handleAwaitingConfirmation} />
   }
 
-  if (session && onboarded === true && hasSeenWalkthrough) {
+  if (session && onboarded === true && termsAccepted && hasSeenWalkthrough) {
     const hideChrome = chatThreadOpen || listingDetailOpen
     const feedIsCollapsed = page === 'feed' && feedScrollY > FEED_COLLAPSE_THRESHOLD
 

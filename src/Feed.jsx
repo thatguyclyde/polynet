@@ -303,6 +303,12 @@ function ReportReasonsSheet({ onSelect, onClose }) {
         position: 'fixed', inset: 0, zIndex: 400,
         background: 'rgba(0,0,0,0.45)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        // touchAction: 'none' stops a finger dragging on the dimmed backdrop
+        // from being picked up as a pan gesture by the feed's scroll
+        // container behind it (touch-action is inherited down through
+        // descendants, which is fine here since the sheet's own content is
+        // short and never needs to scroll internally).
+        touchAction: 'none',
       }}
     >
       <motion.div
@@ -1560,12 +1566,23 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
       </AnimatePresence>
 
       {viewingProfileId && (
-        <PublicProfileCard
-          userId={viewingProfileId}
-          session={session}
-          onClose={() => setViewingProfileId(null)}
-          onMessage={handleMessageUser}
-        />
+        // Wrapper only exists to set touchAction: 'none' — PublicProfileCard
+        // renders its own fixed-position card/backdrop as a *descendant* of
+        // this div, and touch-action restrictions apply down the DOM tree,
+        // so a finger dragging anywhere over the card (including its own
+        // backdrop) no longer scrolls the feed behind it. If PublicProfileCard
+        // ever grows its own internally-scrolling region (e.g. a long bio or
+        // skills list), that region would need its own explicit
+        // touchAction override inside PublicProfileCard.jsx itself, since a
+        // 'none' set here can't be re-opened by a descendant.
+        <div style={{ touchAction: 'none' }}>
+          <PublicProfileCard
+            userId={viewingProfileId}
+            session={session}
+            onClose={() => setViewingProfileId(null)}
+            onMessage={handleMessageUser}
+          />
+        </div>
       )}
 
       <AnimatePresence>

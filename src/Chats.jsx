@@ -126,7 +126,7 @@ function MessagesSkeleton() {
   ]
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '8px' }}>
-      <SkeletonStyle />
+      <SkeletonShimmerStyle />
       {bubbles.map((b, i) => (
         <div key={i} style={{ display: 'flex', justifyContent: b.mine ? 'flex-end' : 'flex-start' }}>
           <div style={{
