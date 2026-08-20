@@ -259,6 +259,17 @@ function ShareSheet({ article, onClose, onDownload }) {
   const [copied, setCopied] = useState(false)
   const url = article?.shareUrl
 
+  // Drawn directly instead of going through Icon.jsx — its icon-name mapping
+  // wasn't rendering "copy" reliably, so this sidesteps that entirely.
+  function CopyIcon({ size = 17, color = 'currentColor' }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </svg>
+    )
+  }
+
   function shareToWhatsApp() {
     window.open(`https://wa.me/?text=${encodeURIComponent('Check out this update on PolyNet: ' + url)}`, '_blank')
     onClose()
@@ -321,7 +332,7 @@ function ShareSheet({ article, onClose, onDownload }) {
 
         <div onClick={copyLink} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', cursor: 'pointer', borderRadius: '12px' }}>
           <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="copy" size={17} color="var(--app-accent)" />
+            <CopyIcon size={17} color="var(--app-accent)" />
           </div>
           <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-strong)' }}>{copied ? 'Link copied!' : 'Copy Link'}</span>
         </div>

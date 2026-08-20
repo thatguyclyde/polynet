@@ -1192,8 +1192,21 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
             </button>
           </div>
 
-          {/* Category filter chips — scrolls away with the page */}
-          <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px', marginBottom: '4px' }}>
+          {/* Category filter chips — scrolls away with the page.
+              App.jsx's page-swipe-to-change-tab gesture is driven by Framer
+              Motion's drag="x" on the page wrapper, which listens for native
+              Pointer Events (pointerdown/pointermove), not touch events. A
+              finger landing on the gaps between chips — not just the chips
+              themselves — was bubbling pointerdown up to that wrapper and
+              getting mistaken for a tab-swipe. Stopping propagation on the
+              pointer events (plus touchAction so the browser itself commits
+              to horizontal panning here) keeps the gesture local to this row. */}
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px', marginBottom: '4px', touchAction: 'pan-x' }}
+          >
             {CATEGORIES.map(cat => {
               const isActive = activeCat === cat.id
               return (
