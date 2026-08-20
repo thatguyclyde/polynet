@@ -119,24 +119,10 @@ function DislikeButton({ isDisliked, count, pulseKey, onClick }) {
   )
 }
 
-// Shimmer keyframe shared by the skeleton pieces below — same pattern as
-// PolyMart's ListingsGridSkeleton.
-function SkeletonStyle() {
-  return (
-    <style>{`
-      @keyframes skeletonShimmer {
-        0% { background-position: -200px 0; }
-        100% { background-position: 200px 0; }
-      }
-    `}</style>
-  )
-}
+import { SkeletonShimmerStyle, shimmerStyle as feedShimmer } from './Skeleton'
 
-const shimmerBg = {
-  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
-  backgroundSize: '400px 100%',
-  animation: 'skeletonShimmer 1.4s ease-in-out infinite',
-}
+// Use the exact Feed shimmer (vibrant sweep)
+const shimmerBg = { ...feedShimmer }
 
 // Mimics one news card. Alternates image/text-only shape so the loading
 // state doesn't look identical to every real card underneath it.
@@ -166,7 +152,7 @@ function NewsCardSkeleton({ withImage }) {
 function NewsSkeleton() {
   return (
     <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      <SkeletonStyle />
+      <SkeletonShimmerStyle />
       <NewsCardSkeleton withImage />
       <NewsCardSkeleton />
       <NewsCardSkeleton withImage />

@@ -960,27 +960,14 @@ function Toggle({ checked, onChange }) {
 // layout (avatar card + preferences list) so nothing visually "jumps"
 // once the real data arrives, and replaces the old plain three-dot
 // spinner that used to show here.
-function ProfileSkeletonStyle() {
-  return (
-    <style>{`
-      @keyframes profileSkeletonShimmer {
-        0% { background-position: -200px 0; }
-        100% { background-position: 200px 0; }
-      }
-    `}</style>
-  )
-}
+import { SkeletonShimmerStyle, shimmerStyle as feedShimmer } from './Skeleton'
 
-const profileShimmerBg = {
-  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
-  backgroundSize: '400px 100%',
-  animation: 'profileSkeletonShimmer 1.4s ease-in-out infinite',
-}
+const profileShimmerBg = { ...feedShimmer }
 
 function ProfileLoadingSkeleton() {
   return (
     <div style={{ padding: '16px' }}>
-      <ProfileSkeletonStyle />
+      <SkeletonShimmerStyle />
 
       <div style={{
         borderRadius: '22px', border: '1px solid var(--app-border)', background: 'var(--card-bg)',

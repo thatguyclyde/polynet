@@ -2,7 +2,7 @@
 // slides left-to-right across each block on a loop. Keyframes are injected
 // once per skeleton screen (harmless if duplicated) so Block never depends
 // on a global stylesheet defining them.
-function SkeletonShimmerStyle() {
+export function SkeletonShimmerStyle() {
   return (
     <style>{`
       @keyframes skeletonShimmer {
@@ -13,13 +13,17 @@ function SkeletonShimmerStyle() {
   )
 }
 
+export const shimmerStyle = {
+  background: 'linear-gradient(90deg, var(--app-border) 25%, rgba(255,255,255,0.5) 50%, var(--app-border) 75%)',
+  backgroundSize: '200% 100%',
+  animation: 'skeletonShimmer 0.9s linear infinite',
+}
+
 function Block({ width = '100%', height = '14px', radius = '6px', style = {} }) {
   return (
     <div style={{
       width, height, borderRadius: radius,
-      background: 'linear-gradient(90deg, var(--app-border) 25%, rgba(255,255,255,0.5) 50%, var(--app-border) 75%)',
-      backgroundSize: '200% 100%',
-      animation: 'skeletonShimmer 0.9s linear infinite',
+      ...shimmerStyle,
       ...style,
     }} />
   )

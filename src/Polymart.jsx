@@ -102,22 +102,9 @@ function VerifiedBadge({ size = 13 }) {
   )
 }
 // Shimmer keyframe shared by both skeleton components below.
-function SkeletonStyle() {
-  return (
-    <style>{`
-      @keyframes skeletonShimmer {
-        0% { background-position: -200px 0; }
-        100% { background-position: 200px 0; }
-      }
-    `}</style>
-  )
-}
+import { SkeletonShimmerStyle, shimmerStyle as feedShimmer } from './Skeleton'
 
-const shimmerBg = {
-  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
-  backgroundSize: '400px 100%',
-  animation: 'skeletonShimmer 1.4s ease-in-out infinite',
-}
+const shimmerBg = { ...feedShimmer }
 
 // Mimics one listing card (image + price + title lines) — used both for
 // the main grid's initial load and My Listings' sheet.
@@ -139,7 +126,7 @@ function ListingCardSkeleton({ height = 120 }) {
 function ListingsGridSkeleton() {
   return (
     <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-      <SkeletonStyle />
+      <SkeletonShimmerStyle />
       {[0, 1, 2, 3, 4, 5].map(i => <ListingCardSkeleton key={i} />)}
     </div>
   )
@@ -150,7 +137,7 @@ function ListingsGridSkeleton() {
 function MyListingsSkeleton() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-      <SkeletonStyle />
+      <SkeletonShimmerStyle />
       {[0, 1, 2, 3].map(i => <ListingCardSkeleton key={i} height={100} />)}
     </div>
   )

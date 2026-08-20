@@ -90,29 +90,16 @@ function InitialsAvatar({ name, url, size = 44, onClick }) {
   )
 }
 // Shimmer keyframe shared by both skeleton components below.
-function SkeletonStyle() {
-  return (
-    <style>{`
-      @keyframes skeletonShimmer {
-        0% { background-position: -200px 0; }
-        100% { background-position: 200px 0; }
-      }
-    `}</style>
-  )
-}
+import { SkeletonShimmerStyle, shimmerStyle as feedShimmer } from './Skeleton'
 
-const shimmerBg = {
-  background: 'linear-gradient(90deg, var(--app-border-soft) 25%, var(--app-border) 37%, var(--app-border-soft) 63%)',
-  backgroundSize: '400px 100%',
-  animation: 'skeletonShimmer 1.4s ease-in-out infinite',
-}
+const shimmerBg = { ...feedShimmer }
 
 // Inbox loading state — mimics the real row layout (avatar + two lines)
 // so the list doesn't visibly "jump" once real conversations load in.
 function InboxSkeleton() {
   return (
     <div style={{ padding: '4px 12px' }}>
-      <SkeletonStyle />
+      <SkeletonShimmerStyle />
       {[0, 1, 2, 3, 4, 5].map(i => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '50%', flexShrink: 0, ...shimmerBg }} />
