@@ -413,6 +413,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const [expandedComments, setExpandedComments] = useState(new Set())
 
   const [openMenuId, setOpenMenuId] = useState(null)
+  const fileInputRef = useRef(null)
   const [savingImageId, setSavingImageId] = useState(null)
 
   const [viewingPost, setViewingPost] = useState(null)
@@ -525,6 +526,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   async function handleImageSelect(e) {
     const file = e.target.files[0]
     if (!file) return
+    setComposerStep('photo')
     setUploading(true)
     const compressed = await compressImage(file)
     setImageFile(compressed)
@@ -1243,11 +1245,19 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                   </div>
                 </div>
 
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  style={{ display: 'none' }}
+                />
+
                 <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
                   {composerStep === 'choose' && (
                     <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div
-                        onClick={() => setComposerStep('photo')}
+                        onClick={() => fileInputRef.current?.click()}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '14px', padding: '18px',
                           borderRadius: '16px', border: '1.5px solid var(--app-border-soft)',
