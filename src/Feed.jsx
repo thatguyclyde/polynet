@@ -44,7 +44,7 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-function compressImage(file, maxWidth = 1080, quality = 0.7) {
+function compressImage(file, maxWidth = 900, quality = 0.72) {
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -60,12 +60,48 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
         canvas.height = height
         const ctx = canvas.getContext('2d')
         ctx.drawImage(img, 0, 0, width, height)
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality)
+        // WebP gives noticeably smaller files than JPEG at the same visual
+        // quality — meaningful when every byte counts against a 1GB bucket.
+        canvas.toBlob((blob) => resolve(blob), 'image/webp', quality)
       }
       img.src = e.target.result
     }
     reader.readAsDataURL(file)
   })
+}
+
+// Storage stays on a fixed byte budget per user so one heavy poster can't
+// eat the shared bucket. Checked client-side before every image upload;
+// the trigger-maintained `storage_usage` table (see the SQL migration) is
+// the source of truth and updates automatically as files are added/removed.
+const MAX_STORAGE_BYTES_PER_USER = 20 * 1024 * 1024 // 20MB
+
+async function checkStorageQuota(userId) {
+  const { data, error } = await supabase
+    .from('storage_usage')
+    .select('bytes_used')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('Error checking storage quota:', error.message)
+    return { ok: true } // fail open — don't block posting over a quota-check hiccup
+  }
+  const used = data?.bytes_used || 0
+  if (used >= MAX_STORAGE_BYTES_PER_USER) {
+    return { ok: false, usedMB: (used / (1024 * 1024)).toFixed(1) }
+  }
+  return { ok: true }
+}
+
+// Pulls the storage path (e.g. "userId/169999.webp") back out of a public
+// URL so it can be passed to storage.remove(). Returns null if the URL
+// doesn't match the expected bucket shape.
+function extractStoragePath(publicUrl, bucket) {
+  if (!publicUrl) return null
+  const marker = `/object/public/${bucket}/`
+  const idx = publicUrl.indexOf(marker)
+  if (idx === -1) return null
+  return publicUrl.slice(idx + marker.length)
 }
 
 function letterOverlapRatio(query, target) {
@@ -399,6 +435,7 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [imageError, setImageError] = useState(null)
   const [showCaptionField, setShowCaptionField] = useState(false)
 
   const [likedIds, setLikedIds] = useState(new Set())
@@ -526,12 +563,22 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     setNewCategory('school')
     setImageFile(null)
     setImagePreview(null)
+    setImageError(null)
     setShowCaptionField(false)
   }
 
   async function handleImageSelect(e) {
     const file = e.target.files[0]
     if (!file) return
+    setImageError(null)
+
+    const quota = await checkStorageQuota(session.user.id)
+    if (!quota.ok) {
+      setImageError(`You've used your ${quota.usedMB}MB photo allowance. Delete an old post with a photo to free up space.`)
+      e.target.value = ''
+      return
+    }
+
     setComposerStep('photo')
     setUploading(true)
     const compressed = await compressImage(file)
@@ -546,8 +593,8 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
 
     let imageUrl = null
     if (imageFile) {
-      const fileName = `${session.user.id}/${Date.now()}.jpg`
-      const { error: uploadErr } = await supabase.storage.from('post-images').upload(fileName, imageFile, { contentType: 'image/jpeg' })
+      const fileName = `${session.user.id}/${Date.now()}.webp`
+      const { error: uploadErr } = await supabase.storage.from('post-images').upload(fileName, imageFile, { contentType: 'image/webp' })
       if (!uploadErr) {
         const { data: urlData } = supabase.storage.from('post-images').getPublicUrl(fileName)
         imageUrl = urlData.publicUrl
@@ -680,11 +727,25 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     const postId = deletePostId
     setDeletePostId(null)
     if (!postId) return
+
+    const targetPost = posts.find(p => p.id === postId) || (viewingPost?.id === postId ? viewingPost : null)
+    const imageUrl = targetPost?.image_url || null
+
     const { error } = await supabase.from('feed_posts').delete().eq('id', postId)
     if (!error) {
       setPosts(prev => prev.filter(p => p.id !== postId))
       setOpenMenuId(null)
       if (viewingPost?.id === postId) setViewingPost(null)
+
+      // Deleting the row doesn't touch Storage — that's a separate system —
+      // so the image file has to be removed explicitly or it sits in the
+      // bucket forever as dead weight against the 1GB quota.
+      const path = extractStoragePath(imageUrl, 'post-images')
+      if (path) {
+        supabase.storage.from('post-images').remove([path]).then(({ error: removeErr }) => {
+          if (removeErr) console.error('Error removing post image from storage:', removeErr.message)
+        })
+      }
     } else {
       console.error('Error deleting post:', error.message)
     }
@@ -1295,6 +1356,12 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Write an update or announcement</div>
                         </div>
                       </div>
+
+                      {imageError && (
+                        <p style={{ fontSize: '12.5px', color: '#EF4444', margin: '2px 4px 0', lineHeight: 1.5 }}>
+                          {imageError}
+                        </p>
+                      )}
                     </div>
                   )}
 

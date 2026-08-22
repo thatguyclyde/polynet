@@ -115,7 +115,7 @@ function compressImage(file, maxWidth = 500, quality = 0.75) {
         canvas.toBlob((blob) => {
           if (blob) resolve(blob)
           else reject(new Error('Compression failed'))
-        }, 'image/jpeg', quality)
+        }, 'image/webp', quality)
       }
       img.onerror = () => reject(new Error('Image failed to load'))
       img.src = e.target.result
@@ -123,6 +123,29 @@ function compressImage(file, maxWidth = 500, quality = 0.75) {
     reader.onerror = () => reject(new Error('File read failed'))
     reader.readAsDataURL(file)
   })
+}
+
+// Storage stays on a fixed byte budget per user so one heavy uploader can't
+// eat the shared 1GB bucket. Checked client-side before any new upload; the
+// trigger-maintained `storage_usage` table (see the SQL migration) is the
+// source of truth and updates automatically as files are added/removed.
+const MAX_STORAGE_BYTES_PER_USER = 20 * 1024 * 1024 // 20MB
+
+async function checkStorageQuota(userId) {
+  const { data, error } = await supabase
+    .from('storage_usage')
+    .select('bytes_used')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('Error checking storage quota:', error.message)
+    return { ok: true } // fail open — don't block on a quota-check hiccup
+  }
+  const used = data?.bytes_used || 0
+  if (used >= MAX_STORAGE_BYTES_PER_USER) {
+    return { ok: false, usedMB: (used / (1024 * 1024)).toFixed(1) }
+  }
+  return { ok: true }
 }
 
 function VerifiedBadge({ size = 14 }) {
@@ -392,6 +415,126 @@ function ChangePasswordSheet({ onClose }) {
   )
 }
 
+async function fetchBlockedUsers(myId) {
+  const { data: rows, error } = await supabase
+    .from('blocked_users')
+    .select('id, blocked_id')
+    .eq('blocker_id', myId)
+
+  if (error) {
+    console.error('Error fetching blocked users:', error.message)
+    return []
+  }
+  if (!rows || rows.length === 0) return []
+
+  const ids = rows.map(r => r.blocked_id)
+  const { data: profilesData, error: profErr } = await supabase
+    .from('profiles')
+    .select('id, full_name, avatar_url, is_admin, admin_title')
+    .in('id', ids)
+
+  if (profErr) {
+    console.error('Error fetching blocked profiles:', profErr.message)
+    return rows.map(r => ({ rowId: r.id, userId: r.blocked_id, name: 'Unknown user', avatarUrl: null }))
+  }
+
+  const byId = {}
+  ;(profilesData || []).forEach(p => { byId[p.id] = p })
+
+  return rows.map(r => {
+    const p = byId[r.blocked_id]
+    return {
+      rowId: r.id,
+      userId: r.blocked_id,
+      name: p ? getDisplayName({ full_name: p.full_name, is_admin: p.is_admin, admin_title: p.admin_title }, 'Unknown user') : 'Unknown user',
+      avatarUrl: p ? p.avatar_url : null,
+    }
+  })
+}
+
+function BlockedUsersPage({ session, onBack }) {
+  const [loading, setLoading] = useState(true)
+  const [blocked, setBlocked] = useState([])
+  const [unblockingId, setUnblockingId] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchBlockedUsers(session.user.id).then(list => {
+      if (!cancelled) {
+        setBlocked(list)
+        setLoading(false)
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  async function handleUnblock(rowId) {
+    setUnblockingId(rowId)
+    const { error } = await supabase.from('blocked_users').delete().eq('id', rowId)
+    if (!error) {
+      setBlocked(prev => prev.filter(b => b.rowId !== rowId))
+    } else {
+      console.error('Error unblocking user:', error.message)
+    }
+    setUnblockingId(null)
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+      <div style={{ padding: '18px 20px', background: 'var(--card-bg)', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div onClick={onBack} style={{ cursor: 'pointer', color: 'var(--text-strong)' }}>
+          <Icon name="arrowLeft" size={20} />
+        </div>
+        <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-strong)' }}>Blocked Users</span>
+      </div>
+
+      <div style={{ padding: '16px 20px' }}>
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--app-accent)', animation: `dotPulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        ) : blocked.length === 0 ? (
+          <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px' }}>
+            You haven't blocked anyone.
+          </p>
+        ) : (
+          blocked.map(b => (
+            <div key={b.rowId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderBottom: '1px solid var(--app-border)' }}>
+              <div style={{
+                width: '42px', height: '42px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+                background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'var(--app-accent)', fontWeight: 700, fontSize: '15px',
+              }}>
+                {b.avatarUrl ? (
+                  <img src={b.avatarUrl} alt={b.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  b.name.split(' ').map(n => n[0]).slice(0, 2).join('')
+                )}
+              </div>
+              <div style={{ flex: 1, fontSize: '13.5px', fontWeight: 600, color: 'var(--text-strong)' }}>{b.name}</div>
+              <button
+                onClick={() => handleUnblock(b.rowId)}
+                disabled={unblockingId === b.rowId}
+                style={{
+                  padding: '7px 14px', borderRadius: '999px', border: '1px solid var(--app-border-soft)',
+                  background: 'transparent', color: 'var(--text-strong)', fontWeight: 700, fontSize: '12px',
+                  cursor: unblockingId === b.rowId ? 'default' : 'pointer', opacity: unblockingId === b.rowId ? 0.6 : 1,
+                }}
+              >
+                {unblockingId === b.rowId ? '...' : 'Unblock'}
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Profile({ session, onBack }) {
   const { isDark, toggleTheme } = useTheme()
   const [editMode, setEditMode] = useState(false)
@@ -418,6 +561,7 @@ function Profile({ session, onBack }) {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [showReports, setShowReports] = useState(false)
+  const [showBlockedUsers, setShowBlockedUsers] = useState(false)
 
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminTitle, setAdminTitle] = useState('')
@@ -465,6 +609,13 @@ function Profile({ session, onBack }) {
     const file = e.target.files[0]
     if (!file) return
     setMessage('')
+
+    const quota = await checkStorageQuota(session.user.id)
+    if (!quota.ok) {
+      setMessage(`You've used your ${quota.usedMB}MB photo allowance. Delete an old post or listing with a photo to free up space.`)
+      return
+    }
+
     setUploading(true)
     try {
       const compressed = await compressImage(file)
@@ -507,10 +658,12 @@ function Profile({ session, onBack }) {
     let newAvatarUrl = avatarUrl
 
     if (avatarFile) {
-      const fileName = `${session.user.id}/${Date.now()}.jpg`
+      // Fixed path per user (not timestamped) so re-uploading overwrites the
+      // same object instead of leaving the old file behind as dead storage.
+      const fileName = `${session.user.id}/avatar.webp`
       const { error: uploadErr } = await supabase.storage
         .from('avatars')
-        .upload(fileName, avatarFile, { contentType: 'image/jpeg' })
+        .upload(fileName, avatarFile, { contentType: 'image/webp', upsert: true })
 
       if (uploadErr) {
         setMessage(`Avatar upload failed: ${uploadErr.message}`)
@@ -518,7 +671,9 @@ function Profile({ session, onBack }) {
         return
       }
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName)
-      newAvatarUrl = urlData.publicUrl
+      // Same path every time means the CDN/browser would keep serving the
+      // old cached image without this — the query param forces a fresh fetch.
+      newAvatarUrl = `${urlData.publicUrl}?v=${Date.now()}`
     }
 
     const updatePayload = {
@@ -603,6 +758,10 @@ function Profile({ session, onBack }) {
 
   if (showReports) {
     return <ReportsScreen onBack={() => setShowReports(false)} />
+  }
+
+  if (showBlockedUsers) {
+    return <BlockedUsersPage session={session} onBack={() => setShowBlockedUsers(false)} />
   }
 
   if (infoPage === 'about') {
@@ -976,6 +1135,7 @@ function Profile({ session, onBack }) {
               <SettingsRow icon="moon" label="Dark Mode" trailing={<Toggle checked={isDark} onChange={toggleTheme} />} />
               <SettingsRow icon="info" label="About PolyNet" onClick={() => setInfoPage('about')} />
               <SettingsRow icon="shield" label="Privacy Policy" onClick={() => setInfoPage('privacy')} />
+              <SettingsRow icon="ban" label="Blocked Users" onClick={() => setShowBlockedUsers(true)} />
               <SettingsRow icon="phone" label="Contact PolyNet" onClick={() => setContactSheetOpen(true)} isLast={!isFounder} />
               {isFounder && (
                 <SettingsRow icon="flag" label="Reports" onClick={() => setShowReports(true)} isLast />
