@@ -6,8 +6,8 @@ import { useTheme } from './ThemeContext'
 import { getDisplayName } from './DisplayName'
 import PublicProfileCard from './PublicProfileCard'
 
-const FILTER_ACTIVE_BG = '#FFFFFF'
-const FILTER_ACTIVE_TEXT = '#1A1A2E'
+const FILTER_ACTIVE_BG = 'linear-gradient(135deg, #7C3AED, #A855F7)'
+const FILTER_ACTIVE_TEXT = '#FFFFFF'
 const FILTER_PURPLE_EDGE = '#7C3AED'
 const VERIFIED_BLUE = '#1D9BF0'
 const MAX_LISTING_IMAGES = 3
@@ -1025,24 +1025,24 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                       colorful gradient badge so it reads as a real photo
                       slot rather than a plain purple button blending into
                       everything else on the form. */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
                     {imagePreviews.length < MAX_LISTING_IMAGES && (
                       <label style={{
-                        width: '72px', height: '72px', borderRadius: '14px', flexShrink: 0,
+                        width: '58px', height: '58px', borderRadius: '12px', flexShrink: 0,
                         border: '1.5px dashed var(--app-accent)',
                         background: 'var(--app-accent-soft)',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px',
                         cursor: 'pointer',
                       }}>
                         <div style={{
-                          width: '28px', height: '28px', borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #38BDF8, #6366F1)',
+                          width: '22px', height: '22px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #7C3AED, #EC4899)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          boxShadow: '0 2px 8px rgba(99,102,241,0.35)',
+                          boxShadow: '0 2px 6px rgba(124,58,237,0.35)',
                         }}>
-                          <Icon name="camera" size={14} color="#fff" />
+                          <Icon name="camera" size={11} color="#fff" />
                         </div>
-                        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--app-accent)' }}>
+                        <span style={{ fontSize: '8.5px', fontWeight: 700, color: 'var(--app-accent)' }}>
                           {imagePreviews.length}/{MAX_LISTING_IMAGES}
                         </span>
                         <input
@@ -1055,17 +1055,17 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                       </label>
                     )}
                     {imagePreviews.map((src, idx) => (
-                      <div key={idx} style={{ position: 'relative', width: '72px', height: '72px', flexShrink: 0 }}>
-                        <img src={src} alt={`preview ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '14px' }} />
+                      <div key={idx} style={{ position: 'relative', width: '58px', height: '58px', flexShrink: 0 }}>
+                        <img src={src} alt={`preview ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }} />
                         <div
                           onClick={() => removeImageAt(idx)}
                           style={{
-                            position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px',
+                            position: 'absolute', top: '3px', right: '3px', width: '16px', height: '16px',
                             borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff',
                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                           }}
                         >
-                          <Icon name="x" size={10} color="#fff" />
+                          <Icon name="x" size={9} color="#fff" />
                         </div>
                       </div>
                     ))}
@@ -1087,7 +1087,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                     value={description}
                     onChange={e => setDescription(e.target.value)}
                     placeholder="Additional info..."
-                    rows={3}
+                    rows={1}
                     style={{ ...composerInput, resize: 'none', fontFamily: 'inherit' }}
                   />
 
@@ -1208,7 +1208,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
             onPointerDown={(e) => e.stopPropagation()}
             onPointerMove={(e) => e.stopPropagation()}
             onPointerUp={(e) => e.stopPropagation()}
-            style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px', marginBottom: '4px', touchAction: 'pan-x' }}
+            style={{ display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '2px', marginBottom: '4px', touchAction: 'pan-x' }}
           >
             {CATEGORIES.map(cat => {
               const isActive = activeCat === cat.id
@@ -1217,8 +1217,8 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                   key={cat.id}
                   onClick={() => setActiveCat(cat.id)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: '5px',
-                    padding: '7px 14px', borderRadius: '20px', fontSize: '12.5px', fontWeight: 600,
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    padding: '6px 10px', borderRadius: '16px', fontSize: '11.5px', fontWeight: 600,
                     whiteSpace: 'nowrap', cursor: 'pointer',
                     border: isActive ? `1.5px solid ${FILTER_PURPLE_EDGE}` : `1.5px solid ${filterInactiveBorder}`,
                     background: isActive ? FILTER_ACTIVE_BG : 'transparent',
@@ -1226,7 +1226,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                     transition: 'border-color 0.15s, background 0.15s, color 0.15s',
                   }}
                 >
-                  <Icon name={cat.icon} size={14} color={isActive ? FILTER_ACTIVE_TEXT : filterInactiveText} />
+                  <Icon name={cat.icon} size={12} color={isActive ? FILTER_ACTIVE_TEXT : filterInactiveText} />
                   {cat.label}
                 </div>
               )
