@@ -1000,7 +1000,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                   width: '100%',
                   maxWidth: '360px',
                   maxHeight: '80vh',
-                  background: 'var(--card-bg)',
+                  background: isDark ? '#000000' : 'var(--card-bg)',
                   borderRadius: '26px',
                   boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
                   display: 'flex',
