@@ -254,6 +254,144 @@ function ContactSheet({ onClose }) {
   )
 }
 
+function AccountSheet({ onClose, onChangePassword, onDeleteAccount, onLogout }) {
+  const rows = [
+    { icon: 'lock', label: 'Change Password', onClick: onChangePassword },
+    { icon: 'trash', label: 'Delete Account', onClick: onDeleteAccount, danger: true },
+    { icon: 'logout', label: 'Log Out', onClick: onLogout, danger: true },
+  ]
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 12px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 14px' }} />
+        <h3 style={{ margin: '10px 12px 14px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-strong)' }}>My Account</h3>
+
+        {rows.map(row => (
+          <div
+            key={row.label}
+            onClick={row.onClick}
+            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 12px', borderRadius: '12px', cursor: 'pointer' }}
+          >
+            <div style={{
+              width: '38px', height: '38px', borderRadius: '50%',
+              background: row.danger ? 'rgba(239,68,68,0.12)' : 'var(--app-accent-soft)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <Icon name={row.icon} size={17} color={row.danger ? '#EF4444' : 'var(--app-accent)'} />
+            </div>
+            <div style={{ fontSize: '14.5px', fontWeight: 600, color: row.danger ? '#EF4444' : 'var(--text-strong)' }}>
+              {row.label}
+            </div>
+          </div>
+        ))}
+      </motion.div>
+    </div>
+  )
+}
+
+function ChangePasswordSheet({ onClose }) {
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(false)
+
+  async function handleSave() {
+    setError('')
+    if (newPassword.length < 6) return setError('Password must be at least 6 characters')
+    if (newPassword !== confirmPassword) return setError('Passwords do not match')
+    setSaving(true)
+    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword })
+    setSaving(false)
+    if (updateErr) {
+      setError(updateErr.message)
+    } else {
+      setDone(true)
+      setTimeout(onClose, 1400)
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        onClick={e => e.stopPropagation()}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+        style={{
+          width: '100%', maxWidth: '420px',
+          background: 'var(--card-bg)', borderRadius: '24px 24px 0 0',
+          padding: '10px 20px 28px',
+        }}
+      >
+        <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--app-border-soft)', margin: '6px auto 14px' }} />
+        <h3 style={{ margin: '10px 0 14px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-strong)' }}>Change Password</h3>
+
+        {done ? (
+          <p style={{ fontSize: '13.5px', color: 'var(--text-body)', textAlign: 'center', padding: '10px 0' }}>✓ Password updated</p>
+        ) : (
+          <>
+            <label style={miniLabel}>New Password</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              style={{ ...compactInput, marginBottom: '12px' }}
+              placeholder="At least 6 characters"
+            />
+            <label style={miniLabel}>Confirm Password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              style={{ ...compactInput, marginBottom: '10px' }}
+              placeholder="Re-enter new password"
+            />
+            {error && <p style={{ fontSize: '12.5px', color: '#EF4444', margin: '0 0 10px' }}>{error}</p>}
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                width: '100%', padding: '13px', borderRadius: '14px', border: 'none',
+                background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '14px',
+                cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, marginTop: '4px',
+              }}
+            >
+              {saving ? 'Saving...' : 'Update Password'}
+            </button>
+          </>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
 function Profile({ session, onBack }) {
   const { isDark, toggleTheme } = useTheme()
   const [editMode, setEditMode] = useState(false)
@@ -277,6 +415,8 @@ function Profile({ session, onBack }) {
   const [confirmModal, setConfirmModal] = useState(null)
   const [viewingAvatar, setViewingAvatar] = useState(false)
   const [contactSheetOpen, setContactSheetOpen] = useState(false)
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [showReports, setShowReports] = useState(false)
 
   const [isAdmin, setIsAdmin] = useState(false)
@@ -417,6 +557,13 @@ function Profile({ session, onBack }) {
     if (!isAdmin && !fullName.trim()) return setMessage('Full name is required')
     if (isAdmin && !adminTitle.trim()) return setMessage('Title is required')
     setConfirmModal('save')
+  }
+
+  async function performDeleteAccount() {
+    setConfirmModal(null)
+    await supabase.from('account_deletion_requests').insert({ user_id: session.user.id })
+    await supabase.from('profiles').update({ deletion_requested_at: new Date().toISOString() }).eq('id', session.user.id)
+    await supabase.auth.signOut()
   }
 
   function cancelEdit() {
@@ -836,7 +983,7 @@ function Profile({ session, onBack }) {
             </div>
 
             <button
-              onClick={() => setConfirmModal('logout')}
+              onClick={() => setAccountSheetOpen(true)}
               style={{
                 width: '100%', padding: '13px', borderRadius: '14px',
                 border: '1px solid var(--danger)', background: 'transparent',
@@ -844,7 +991,7 @@ function Profile({ session, onBack }) {
                 cursor: 'pointer', marginTop: '14px',
               }}
             >
-              Log Out
+              My Account
             </button>
           </>
         )}
@@ -905,6 +1052,23 @@ function Profile({ session, onBack }) {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {accountSheetOpen && (
+          <AccountSheet
+            onClose={() => setAccountSheetOpen(false)}
+            onChangePassword={() => { setAccountSheetOpen(false); setChangePasswordOpen(true) }}
+            onDeleteAccount={() => { setAccountSheetOpen(false); setConfirmModal('delete') }}
+            onLogout={() => { setAccountSheetOpen(false); setConfirmModal('logout') }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {changePasswordOpen && (
+          <ChangePasswordSheet onClose={() => setChangePasswordOpen(false)} />
+        )}
+      </AnimatePresence>
+
       {confirmModal === 'save' && (
         <ConfirmModal
           title="Save changes?"
@@ -922,6 +1086,17 @@ function Profile({ session, onBack }) {
           confirmLabel="Log Out"
           danger
           onConfirm={() => supabase.auth.signOut()}
+          onCancel={() => setConfirmModal(null)}
+        />
+      )}
+
+      {confirmModal === 'delete' && (
+        <ConfirmModal
+          title="Delete your account?"
+          body="This submits a deletion request — your profile will be flagged and permanently removed by a PolyNet admin. This can't be undone."
+          confirmLabel="Delete Account"
+          danger
+          onConfirm={performDeleteAccount}
           onCancel={() => setConfirmModal(null)}
         />
       )}
