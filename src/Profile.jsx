@@ -89,8 +89,8 @@ const DEPARTMENTS = [
 const VERIFIED_BLUE = '#1D9BF0'
 
 const WHATSAPP_NUMBER = '263711881821'
-const CONTACT_EMAIL = 'clydechiruka4@gmail.com'
-const FOUNDER_EMAIL = 'clydechiruka4@gmail.com'
+const CONTACT_EMAIL = 'polynetzim@gmail.com'
+const FOUNDER_EMAIL = 'polynetzim@gmail.com'
 
 function whatsappAppUrl(text) {
   return `whatsapp://send?phone=${WHATSAPP_NUMBER}&text=${encodeURIComponent(text)}`

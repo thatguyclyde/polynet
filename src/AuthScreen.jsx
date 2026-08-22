@@ -117,10 +117,11 @@ function AuthScreen({ onSignUpSuccess }) {
     }
 
     setSuLoading(true)
-    const { error } = await supabase.auth.signUp({ email: suEmail, password: suPassword })
+    const { data, error } = await supabase.auth.signUp({ email: suEmail, password: suPassword })
 
     if (error) {
-      setSuMessage(error.message)
+      console.log('signUp error:', error)
+      setSuMessage(JSON.stringify(error, null, 2))
     } else {
       setShowConfirmModal(true)
       onSignUpSuccess?.()

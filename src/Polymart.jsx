@@ -1009,7 +1009,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                   pointerEvents: 'auto',
                 }}
               >
-                <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                <div style={{ padding: '16px 16px 14px', borderBottom: '1px solid var(--app-border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
                   <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-strong)', flex: 1 }}>
                     List an Item
                   </h2>
@@ -1018,7 +1018,59 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                   </div>
                 </div>
 
-                <div style={{ overflowY: 'auto', flex: 1, padding: '20px' }}>
+                <div style={{ overflowY: 'auto', flex: 1, padding: '16px' }}>
+                  {/* Photos first — a single row of same-size square tiles
+                      (add-tile + previews together), not a separate button
+                      buried near the bottom. The add-tile gets its own
+                      colorful gradient badge so it reads as a real photo
+                      slot rather than a plain purple button blending into
+                      everything else on the form. */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                    {imagePreviews.length < MAX_LISTING_IMAGES && (
+                      <label style={{
+                        width: '72px', height: '72px', borderRadius: '14px', flexShrink: 0,
+                        border: '1.5px dashed var(--app-accent)',
+                        background: 'var(--app-accent-soft)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                        cursor: 'pointer',
+                      }}>
+                        <div style={{
+                          width: '28px', height: '28px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #38BDF8, #6366F1)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          boxShadow: '0 2px 8px rgba(99,102,241,0.35)',
+                        }}>
+                          <Icon name="camera" size={14} color="#fff" />
+                        </div>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--app-accent)' }}>
+                          {imagePreviews.length}/{MAX_LISTING_IMAGES}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleImageSelect}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                    )}
+                    {imagePreviews.map((src, idx) => (
+                      <div key={idx} style={{ position: 'relative', width: '72px', height: '72px', flexShrink: 0 }}>
+                        <img src={src} alt={`preview ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '14px' }} />
+                        <div
+                          onClick={() => removeImageAt(idx)}
+                          style={{
+                            position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px',
+                            borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          }}
+                        >
+                          <Icon name="x" size={10} color="#fff" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
                   <input
                     value={title}
                     onChange={e => setTitle(e.target.value)}
@@ -1044,7 +1096,7 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                       side-by-side flex row whose label could wrap and
                       throw cell heights out of alignment. Every cell is
                       now visually identical regardless of label length. */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '4px' }}>
                     {CATEGORIES.filter(c => c.id !== 'all').map(cat => {
                       const isSelected = category === cat.id
                       return (
@@ -1052,8 +1104,8 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                           key={cat.id}
                           onClick={() => setCategory(cat.id)}
                           style={{
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                            height: '64px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                            height: '54px', borderRadius: '12px', fontSize: '10.5px', fontWeight: 600,
                             cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box', padding: '0 4px',
                             background: isSelected ? 'var(--app-accent)' : 'var(--app-accent-soft)',
                             color: isSelected ? '#fff' : 'var(--app-accent)',
@@ -1069,55 +1121,6 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
                       )
                     })}
                   </div>
-
-                  {/* Up to 3 photos, optional — each preview removable individually */}
-                  {imagePreviews.length > 0 && (
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                      {imagePreviews.map((src, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            position: 'relative',
-                            width: imagePreviews.length === 1 ? '100%' : 'calc(33.33% - 6px)',
-                            height: imagePreviews.length === 1 ? '160px' : '90px',
-                          }}
-                        >
-                          <img src={src} alt={`preview ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }} />
-                          <div
-                            onClick={() => removeImageAt(idx)}
-                            style={{
-                              position: 'absolute', top: '6px', right: '6px', width: '22px', height: '22px',
-                              borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                            }}
-                          >
-                            <Icon name="x" size={12} color="#fff" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <label style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    padding: '8px 12px', borderRadius: '10px',
-                    background: imagePreviews.length >= MAX_LISTING_IMAGES ? 'var(--app-border-soft)' : 'var(--app-accent-soft)',
-                    cursor: imagePreviews.length >= MAX_LISTING_IMAGES ? 'default' : 'pointer',
-                    marginBottom: '12px',
-                  }}>
-                    <Icon name="camera" size={16} color={imagePreviews.length >= MAX_LISTING_IMAGES ? 'var(--text-muted)' : 'var(--app-accent)'} />
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: imagePreviews.length >= MAX_LISTING_IMAGES ? 'var(--text-muted)' : 'var(--app-accent)' }}>
-                      {imagePreviews.length}/{MAX_LISTING_IMAGES} photos
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleImageSelect}
-                      disabled={imagePreviews.length >= MAX_LISTING_IMAGES}
-                      style={{ display: 'none' }}
-                    />
-                  </label>
 
                   {errorMsg && (
                     <p style={{ color: 'var(--danger)', fontSize: '12.5px', marginBottom: '10px', fontWeight: 600, wordBreak: 'break-word' }}>
@@ -1340,10 +1343,10 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 }
 
 const composerInput = {
-  width: '100%', padding: '12px', borderRadius: '12px',
+  width: '100%', padding: '10px 12px', borderRadius: '12px',
   border: '1.5px solid var(--app-border-soft)', background: 'var(--input-bg)',
   fontSize: '14px', color: 'var(--text-strong)', outline: 'none',
-  boxSizing: 'border-box', marginBottom: '10px',
+  boxSizing: 'border-box', marginBottom: '8px',
 }
 
 export default PolyMart
