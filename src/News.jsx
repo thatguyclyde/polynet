@@ -18,7 +18,7 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-function compressImage(file, maxWidth = 1080, quality = 0.7) {
+function compressImage(file, maxWidth = 900, quality = 0.72) {
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -34,12 +34,22 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
         canvas.height = height
         const ctx = canvas.getContext('2d')
         ctx.drawImage(img, 0, 0, width, height)
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality)
+        canvas.toBlob((blob) => resolve(blob), 'image/webp', quality)
       }
       img.src = e.target.result
     }
     reader.readAsDataURL(file)
   })
+}
+
+// Pulls the storage path back out of a public URL so it can be passed to
+// storage.remove(). Returns null if the URL doesn't match the bucket shape.
+function extractStoragePath(publicUrl, bucket) {
+  if (!publicUrl) return null
+  const marker = `/object/public/${bucket}/`
+  const idx = publicUrl.indexOf(marker)
+  if (idx === -1) return null
+  return publicUrl.slice(idx + marker.length)
 }
 
 function VerifiedBadge({ size = 15 }) {
@@ -489,8 +499,8 @@ function News({ session, isAdmin }) {
 
     let imageUrl = null
     if (imageFile) {
-      const fileName = `${session.user.id}/${Date.now()}.jpg`
-      const { error: uploadErr } = await supabase.storage.from('news-images').upload(fileName, imageFile, { contentType: 'image/jpeg' })
+      const fileName = `${session.user.id}/${Date.now()}.webp`
+      const { error: uploadErr } = await supabase.storage.from('news-images').upload(fileName, imageFile, { contentType: 'image/webp' })
       if (!uploadErr) {
         const { data: urlData } = supabase.storage.from('news-images').getPublicUrl(fileName)
         imageUrl = urlData.publicUrl
@@ -665,12 +675,37 @@ function News({ session, isAdmin }) {
     const articleId = deleteArticleId
     setDeleteArticleId(null)
     if (!articleId) return
-    const { error } = await supabase.from('news_articles').delete().eq('id', articleId)
-    if (!error) {
-      setArticles(prev => prev.filter(a => a.id !== articleId))
-      if (viewingArticle?.id === articleId) setViewingArticle(null)
-    } else {
+
+    const target = articles.find(a => a.id === articleId) || (viewingArticle?.id === articleId ? viewingArticle : null)
+
+    // .select() here matters: without it, Supabase returns no error even
+    // when Row Level Security silently blocks the delete (0 rows affected
+    // looks identical to "succeeded" otherwise) — which is exactly why a
+    // delete can look like it worked and then the article "comes back".
+    const { data, error } = await supabase.from('news_articles').delete().eq('id', articleId).select()
+
+    if (error) {
       console.error('Error deleting article:', error.message)
+      alert('Could not delete this article. Please try again.')
+      return
+    }
+
+    if (!data || data.length === 0) {
+      alert("This article wasn't deleted — the database's permissions rejected it (no error, just 0 rows affected). If you're an admin and still seeing this, the DELETE policy on news_articles needs to allow admins, not just the original author.")
+      return
+    }
+
+    setArticles(prev => prev.filter(a => a.id !== articleId))
+    if (viewingArticle?.id === articleId) setViewingArticle(null)
+
+    // Deleting the row doesn't touch Storage — that's a separate system —
+    // so the image file has to be removed explicitly or it sits in the
+    // bucket forever as dead weight against the 1GB quota.
+    const path = extractStoragePath(target?.image_url, 'news-images')
+    if (path) {
+      supabase.storage.from('news-images').remove([path]).then(({ error: removeErr }) => {
+        if (removeErr) console.error('Error removing news image from storage:', removeErr.message)
+      })
     }
   }
 
@@ -973,6 +1008,8 @@ function News({ session, isAdmin }) {
           const isExpanded = expandedId === article.id
           const preview = article.body?.length > 140 && !isExpanded ? article.body.slice(0, 140) + '...' : article.body
           const isOwnArticle = article.author_id === session.user.id
+          const authorIsAdmin = !!article.profiles?.is_admin
+          const canDelete = isOwnArticle || (isAdmin && !authorIsAdmin)
           const isLiked = likedIds.has(article.id)
           const isDisliked = dislikedIds.has(article.id)
           const isViewingThis = viewingArticle?.id === article.id
@@ -1040,7 +1077,7 @@ function News({ session, isAdmin }) {
                             background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
                             boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '150px', overflow: 'hidden'
                           }}>
-                            {isOwnArticle && (
+                            {canDelete && (
                               <div
                                 onClick={() => requestDeleteArticle(article.id)}
                                 style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
@@ -1049,7 +1086,7 @@ function News({ session, isAdmin }) {
                                 Delete
                               </div>
                             )}
-                            {!isOwnArticle && (
+                            {!canDelete && (
                               <div
                                 onClick={() => requestReportArticle(article.id)}
                                 style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
@@ -1091,7 +1128,7 @@ function News({ session, isAdmin }) {
                           background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--app-border)',
                           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: '150px', overflow: 'hidden'
                         }}>
-                          {isOwnArticle && (
+                          {canDelete && (
                             <div
                               onClick={() => requestDeleteArticle(article.id)}
                               style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
@@ -1107,7 +1144,7 @@ function News({ session, isAdmin }) {
                             <Icon name="download" size={14} />
                             Download
                           </div>
-                          {!isOwnArticle && (
+                          {!canDelete && (
                             <div
                               onClick={() => requestReportArticle(article.id)}
                               style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
@@ -1276,7 +1313,7 @@ function News({ session, isAdmin }) {
                           transformOrigin: 'top right',
                         }}
                       >
-                        {viewingArticle.author_id === session.user.id && (
+                        {(viewingArticle.author_id === session.user.id || (isAdmin && !viewingArticle.profiles?.is_admin)) && (
                           <div
                             onClick={() => requestDeleteArticle(viewingArticle.id)}
                             style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
@@ -1292,7 +1329,7 @@ function News({ session, isAdmin }) {
                           <Icon name="download" size={14} />
                           Download
                         </div>
-                        {viewingArticle.author_id !== session.user.id && (
+                        {viewingArticle.author_id !== session.user.id && !(isAdmin && !viewingArticle.profiles?.is_admin) && (
                           <div
                             onClick={() => requestReportArticle(viewingArticle.id)}
                             style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--danger)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
