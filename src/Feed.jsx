@@ -1099,13 +1099,15 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                                 Delete
                               </div>
                             )}
-                            <div
-                              onClick={() => handleSaveImage(post)}
-                              style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                            >
-                              <Icon name="download" size={14} />
-                              {savingImageId === post.id ? 'Saving...' : 'Save Image'}
-                            </div>
+                            {post.image_url && (
+                              <div
+                                onClick={() => handleSaveImage(post)}
+                                style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                              >
+                                <Icon name="download" size={14} />
+                                {savingImageId === post.id ? 'Saving...' : 'Save Image'}
+                              </div>
+                            )}
                             {/* Report — always available, own posts included. */}
                             <div
                               onClick={() => requestReportPost(post.id)}
@@ -1600,13 +1602,15 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
                             Delete
                           </div>
                         )}
-                        <div
-                          onClick={() => handleSaveImage(viewingPost)}
-                          style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
-                        >
-                          <Icon name="download" size={14} />
-                          {savingImageId === viewingPost.id ? 'Saving...' : 'Save Image'}
-                        </div>
+                        {viewingPost.image_url && (
+                          <div
+                            onClick={() => handleSaveImage(viewingPost)}
+                            style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-strong)', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid var(--app-border-soft)' }}
+                          >
+                            <Icon name="download" size={14} />
+                            {savingImageId === viewingPost.id ? 'Saving...' : 'Save Image'}
+                          </div>
+                        )}
                         {/* Report — always available, own posts included. */}
                         <div
                           onClick={() => requestReportPost(viewingPost.id)}

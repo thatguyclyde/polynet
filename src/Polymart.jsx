@@ -34,7 +34,7 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-function compressImage(file, maxWidth = 1080, quality = 0.7) {
+function compressImage(file, maxWidth = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -50,10 +50,12 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
         canvas.height = height
         const ctx = canvas.getContext('2d')
         ctx.drawImage(img, 0, 0, width, height)
+        // WebP gives noticeably smaller files than JPEG at the same visual
+        // quality — meaningful when every byte counts against a 1GB bucket.
         canvas.toBlob((blob) => {
           if (blob) resolve(blob)
           else reject(new Error('Compression failed'))
-        }, 'image/jpeg', quality)
+        }, 'image/webp', quality)
       }
       img.onerror = () => reject(new Error('Image failed to load'))
       img.src = e.target.result
@@ -61,6 +63,40 @@ function compressImage(file, maxWidth = 1080, quality = 0.7) {
     reader.onerror = () => reject(new Error('File read failed'))
     reader.readAsDataURL(file)
   })
+}
+
+// Storage stays on a fixed byte budget per user so one heavy uploader can't
+// eat the shared 1GB bucket. Checked client-side before every image upload;
+// the trigger-maintained `storage_usage` table (see the SQL migration) is
+// the source of truth and updates automatically as files are added/removed.
+const MAX_STORAGE_BYTES_PER_USER = 20 * 1024 * 1024 // 20MB
+
+async function checkStorageQuota(userId) {
+  const { data, error } = await supabase
+    .from('storage_usage')
+    .select('bytes_used')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('Error checking storage quota:', error.message)
+    return { ok: true } // fail open — don't block on a quota-check hiccup
+  }
+  const used = data?.bytes_used || 0
+  if (used >= MAX_STORAGE_BYTES_PER_USER) {
+    return { ok: false, usedMB: (used / (1024 * 1024)).toFixed(1) }
+  }
+  return { ok: true }
+}
+
+// Pulls the storage path (e.g. "userId/1699_0.webp") back out of a public
+// URL so it can be passed to storage.remove(). Returns null if the URL
+// doesn't match the expected bucket shape.
+function extractStoragePath(publicUrl, bucket) {
+  if (!publicUrl) return null
+  const marker = `/object/public/${bucket}/`
+  const idx = publicUrl.indexOf(marker)
+  if (idx === -1) return null
+  return publicUrl.slice(idx + marker.length)
 }
 
 // Every category now uses a real lucide icon instead of an emoji
@@ -309,9 +345,13 @@ function MyListingsSheet({ session, onClose, onListingRemoved }) {
     setConfirmSoldId(null)
     if (!listingId) return
     setRemovingId(listingId)
+
+    const target = listings.find(l => l.id === listingId)
+    const imageUrls = getListingImages(target)
+
     const { error } = await supabase
       .from('marketplace_listings')
-      .update({ sold: true })
+      .update({ sold: true, image_url: null, image_urls: null })
       .eq('id', listingId)
     if (error) {
       console.error('Error marking listing sold:', error.message)
@@ -319,6 +359,18 @@ function MyListingsSheet({ session, onClose, onListingRemoved }) {
     } else {
       setListings(prev => prev.filter(l => l.id !== listingId))
       onListingRemoved?.(listingId)
+
+      // A sold listing is hidden everywhere for good, so its photos are
+      // reclaimed too — otherwise every sale ever made just sits in the
+      // bucket forever, invisible but still eating the 1GB budget.
+      const paths = imageUrls
+        .map(url => extractStoragePath(url, 'marketplace-images'))
+        .filter(Boolean)
+      if (paths.length > 0) {
+        supabase.storage.from('marketplace-images').remove(paths).then(({ error: removeErr }) => {
+          if (removeErr) console.error('Error removing listing images from storage:', removeErr.message)
+        })
+      }
     }
     setRemovingId(null)
   }
@@ -511,6 +563,13 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
       return
     }
 
+    const quota = await checkStorageQuota(session.user.id)
+    if (!quota.ok) {
+      setErrorMsg(`You've used your ${quota.usedMB}MB photo allowance. Mark an old listing as sold or remove a photo elsewhere to free up space.`)
+      e.target.value = ''
+      return
+    }
+
     setUploading(true)
     try {
       const compressedList = await Promise.all(toProcess.map(f => compressImage(f)))
@@ -537,10 +596,10 @@ function PolyMart({ session, onMessageSeller, onListingOpenChange }) {
 
     const uploadedUrls = []
     for (let i = 0; i < imageFiles.length; i++) {
-      const fileName = `${session.user.id}/${Date.now()}_${i}.jpg`
+      const fileName = `${session.user.id}/${Date.now()}_${i}.webp`
       const { error: uploadErr } = await supabase.storage
         .from('marketplace-images')
-        .upload(fileName, imageFiles[i], { contentType: 'image/jpeg' })
+        .upload(fileName, imageFiles[i], { contentType: 'image/webp' })
 
       if (uploadErr) {
         setErrorMsg(`Image upload failed: ${uploadErr.message}`)
