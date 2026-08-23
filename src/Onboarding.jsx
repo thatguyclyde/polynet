@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 
@@ -118,7 +117,7 @@ function compressImage(file, maxWidth = 500, quality = 0.75) {
         canvas.toBlob((blob) => {
           if (blob) resolve(blob)
           else reject(new Error('Compression failed'))
-        }, 'image/webp', quality)
+        }, 'image/jpeg', quality)
       }
       img.onerror = () => reject(new Error('Image failed to load'))
       img.src = e.target.result
@@ -144,10 +143,10 @@ const s = {
     background: active ? 'var(--app-accent)' : 'var(--app-border-soft)', transition: 'background 0.4s',
   }),
   title: { color: 'var(--text-strong)', fontSize: '26px', fontWeight: 800, margin: '0 0 6px' },
-  sub: { color: 'var(--text-muted)', fontSize: '13px', marginBottom: '36px' },
+  sub: { color: 'var(--text-muted)', fontSize: '13px', marginBottom: '26px' },
   label: {
-    display: 'block', color: 'var(--text-muted)', fontSize: '11px', letterSpacing: '1.2px',
-    textTransform: 'uppercase', marginBottom: '8px', marginTop: '20px',
+    display: 'block', color: 'var(--text-muted)', fontSize: '12.5px', fontWeight: 600,
+    marginBottom: '6px', marginTop: '16px',
   },
   input: {
     width: '100%', padding: '14px 16px', borderRadius: '14px',
@@ -175,7 +174,7 @@ const s = {
   nextBtn: {
     width: '100%', padding: '16px', borderRadius: '16px', border: 'none',
     background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '16px',
-    cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: 'auto',
+    cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: '28px',
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
   },
   iconBtn: {
@@ -184,7 +183,7 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: 'pointer', flexShrink: 0,
   },
-  navRow: { display: 'flex', gap: '12px', alignItems: 'center', marginTop: 'auto' },
+  navRow: { display: 'flex', gap: '12px', alignItems: 'center', marginTop: '28px' },
   error: { color: 'var(--danger)', fontSize: '13px', marginTop: '12px' },
   skillPill: {
     display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--app-accent-soft)',
@@ -223,6 +222,7 @@ function VerifiedBadge({ size = 54, style }) {
 // Shared circular avatar picker used by both the student and admin onboarding
 // steps — tap to pick a photo, camera badge signals it's editable.
 function AvatarPicker({ preview, onSelect }) {
+  const initials = 'S'
   return (
     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
       <label style={{ position: 'relative', cursor: 'pointer', display: 'inline-block' }}>
@@ -256,31 +256,21 @@ function StepRoleSelect({ onSelectStudent, onSelectAdmin }) {
       <h2 style={s.title}>How will you use PolyNet?</h2>
       <p style={s.sub}>Choose the option that fits you</p>
 
-      <motion.div
-        whileTap={{ scale: 0.98 }}
-        onClick={onSelectStudent}
-        style={{ ...s.roleCard, marginBottom: '14px' }}
-      >
-        <div style={{ ...s.roleIcon, background: `${VERIFIED_BLUE}1F` }}>
-          <Icon name="school" size={22} color={VERIFIED_BLUE} />
-        </div>
-        <div style={{ flex: 1 }}>
+      <div onClick={onSelectStudent} style={{ ...s.roleCard, marginBottom: '14px' }}>
+        <div style={s.roleIcon}>🎓</div>
+        <div>
           <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-strong)' }}>I'm a Student</div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Build your profile, find skills, join the marketplace</div>
         </div>
-        <Icon name="chevronRight" size={18} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-      </motion.div>
+      </div>
 
-      <motion.div whileTap={{ scale: 0.98 }} onClick={onSelectAdmin} style={s.roleCard}>
-        <div style={{ ...s.roleIcon, background: 'var(--app-accent-soft)' }}>
-          <Icon name="shield" size={22} color="var(--app-accent)" />
-        </div>
-        <div style={{ flex: 1 }}>
+      <div onClick={onSelectAdmin} style={s.roleCard}>
+        <div style={s.roleIcon}>🏛️</div>
+        <div>
           <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-strong)' }}>I'm Staff / Admin</div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Post official news and announcements</div>
         </div>
-        <Icon name="chevronRight" size={18} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-      </motion.div>
+      </div>
     </div>
   )
 }
@@ -342,9 +332,7 @@ function StepAdminVerify({ session, onVerified, onBack }) {
     return (
       <div style={s.page}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-          <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 320, damping: 18 }}>
-            <VerifiedBadge size={56} />
-          </motion.div>
+          <VerifiedBadge size={56} />
           <p style={{ color: 'var(--text-strong)', fontWeight: 800, fontSize: '17px', margin: 0 }}>Verified!</p>
         </div>
       </div>
@@ -381,6 +369,9 @@ function StepAdminVerify({ session, onVerified, onBack }) {
             cursor: 'pointer', boxShadow: 'var(--shadow-accent)', textDecoration: 'none',
           }}
         >
+          {/* NOTE: "phone" is unverified against your Icon.jsx mapping — if
+              this doesn't render, send me Icon.jsx and I'll swap the exact
+              correct name in one line. */}
           <Icon name="phone" size={16} color="#fff" />
           Contact PolyNet
         </a>
@@ -435,17 +426,15 @@ function StepAdminDetails({ session, onFinish, onBack }) {
 
     let avatarUrl = null
     if (avatarFile) {
-      // Fixed path per user (not timestamped) so re-uploading overwrites the
-      // same object instead of leaving old files behind as dead storage.
-      const fileName = `${session.user.id}/avatar.webp`
-      const { error: uploadErr } = await supabase.storage.from('avatars').upload(fileName, avatarFile, { contentType: 'image/webp', upsert: true })
+      const fileName = `${session.user.id}/${Date.now()}.jpg`
+      const { error: uploadErr } = await supabase.storage.from('avatars').upload(fileName, avatarFile, { contentType: 'image/jpeg' })
       if (uploadErr) {
         setError(`Avatar upload failed: ${uploadErr.message}`)
         setLoading(false)
         return
       }
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName)
-      avatarUrl = `${urlData.publicUrl}?v=${Date.now()}`
+      avatarUrl = urlData.publicUrl
     }
 
     const updatePayload = {
@@ -530,14 +519,13 @@ function StepAdminDetails({ session, onFinish, onBack }) {
       <p style={{ color: 'var(--text-muted)', fontSize: '11.5px', marginTop: '6px' }}>Shown on your public profile card</p>
 
       {error && <p style={s.error}>{error}</p>}
-      <div style={{ flex: 1, minHeight: '24px' }} />
       <button
         onClick={handleFinish}
         disabled={loading || uploading}
         style={{
           alignSelf: 'center', padding: '14px 44px', borderRadius: '14px', border: 'none',
           background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '15px',
-          cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: 'auto',
+          cursor: 'pointer', boxShadow: 'var(--shadow-accent)', marginTop: '28px',
         }}
       >
         {loading ? 'Saving...' : uploading ? 'Processing...' : 'Done'}
@@ -586,17 +574,15 @@ function StepProfile({ session, onNext, onBack }) {
 
     let avatarUrl = null
     if (avatarFile) {
-      // Fixed path per user (not timestamped) so re-uploading overwrites the
-      // same object instead of leaving old files behind as dead storage.
-      const fileName = `${session.user.id}/avatar.webp`
-      const { error: uploadErr } = await supabase.storage.from('avatars').upload(fileName, avatarFile, { contentType: 'image/webp', upsert: true })
+      const fileName = `${session.user.id}/${Date.now()}.jpg`
+      const { error: uploadErr } = await supabase.storage.from('avatars').upload(fileName, avatarFile, { contentType: 'image/jpeg' })
       if (uploadErr) {
         setError(`Avatar upload failed: ${uploadErr.message}`)
         setLoading(false)
         return
       }
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName)
-      avatarUrl = `${urlData.publicUrl}?v=${Date.now()}`
+      avatarUrl = urlData.publicUrl
     }
 
     const updatePayload = { full_name: fullName, department, year_of_study: year }
@@ -664,7 +650,6 @@ function StepProfile({ session, onNext, onBack }) {
       </div>
 
       {error && <p style={s.error}>{error}</p>}
-      <div style={{ flex: 1, minHeight: '24px' }} />
       <button onClick={handleNext} disabled={loading || uploading} style={s.nextBtn}>
         {loading ? 'Saving...' : uploading ? 'Processing...' : (
           <>
@@ -766,44 +751,38 @@ function StepSkills({ session, onNext, onBack }) {
 function Onboarding({ session, onComplete }) {
   const [flow, setFlow] = useState('roleSelect') // roleSelect | studentStep1 | studentStep2 | adminVerify | adminDetails
 
-  let content = null
-
   if (flow === 'roleSelect') {
-    content = (
+    return (
       <StepRoleSelect
         onSelectStudent={() => setFlow('studentStep1')}
         onSelectAdmin={() => setFlow('adminVerify')}
       />
     )
-  } else if (flow === 'studentStep1') {
-    content = <StepProfile session={session} onNext={() => setFlow('studentStep2')} onBack={() => setFlow('roleSelect')} />
-  } else if (flow === 'studentStep2') {
-    content = <StepSkills session={session} onNext={() => onComplete()} onBack={() => setFlow('studentStep1')} />
-  } else if (flow === 'adminVerify') {
-    content = (
+  }
+
+  if (flow === 'studentStep1') {
+    return <StepProfile session={session} onNext={() => setFlow('studentStep2')} onBack={() => setFlow('roleSelect')} />
+  }
+
+  if (flow === 'studentStep2') {
+    return <StepSkills session={session} onNext={() => onComplete()} onBack={() => setFlow('studentStep1')} />
+  }
+
+  if (flow === 'adminVerify') {
+    return (
       <StepAdminVerify
         session={session}
         onVerified={() => setFlow('adminDetails')}
         onBack={() => setFlow('roleSelect')}
       />
     )
-  } else if (flow === 'adminDetails') {
-    content = <StepAdminDetails session={session} onFinish={() => onComplete()} onBack={() => setFlow('roleSelect')} />
   }
 
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={flow}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -10 }}
-        transition={{ duration: 0.22, ease: 'easeOut' }}
-      >
-        {content}
-      </motion.div>
-    </AnimatePresence>
-  )
+  if (flow === 'adminDetails') {
+    return <StepAdminDetails session={session} onFinish={() => onComplete()} onBack={() => setFlow('roleSelect')} />
+  }
+
+  return null
 }
 
 export default Onboarding

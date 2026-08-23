@@ -81,6 +81,136 @@ function ConfirmEmailModal({ onDismiss }) {
   )
 }
 
+function ForgotPasswordModal({ initialEmail, onClose }) {
+  const [email, setEmail] = useState(initialEmail || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [sent, setSent] = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError('')
+    if (!email.trim()) {
+      return setError('Enter your email first')
+    }
+    setLoading(true)
+    // redirectTo points back at the app's own origin — since this is a
+    // single-page app, Supabase's client (detectSessionInUrl: true in
+    // supabase.js) picks up the recovery tokens from the URL automatically
+    // once the person lands back here, no separate route needed.
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin,
+    })
+    setLoading(false)
+    if (resetErr) {
+      setError(resetErr.message)
+    } else {
+      setSent(true)
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 500,
+      background: 'rgba(10,10,20,0.45)',
+      backdropFilter: 'blur(10px)',
+      WebkitBackdropFilter: 'blur(10px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '24px',
+    }}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 8 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+        style={{
+          background: 'var(--card-bg)',
+          borderRadius: '24px',
+          padding: '32px 26px 26px',
+          width: '100%', maxWidth: '340px',
+          textAlign: 'center',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          border: '1px solid var(--app-border)',
+        }}
+      >
+        {sent ? (
+          <>
+            <div style={{
+              width: '56px', height: '56px', borderRadius: '50%',
+              background: 'var(--app-accent-soft)', margin: '0 auto 18px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--app-accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4h16v16H4z" />
+                <path d="M4 6l8 7 8-7" />
+              </svg>
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>
+              Check your email
+            </h3>
+            <p style={{ margin: '0 0 24px', fontSize: '13.5px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              We sent a password reset link to <strong style={{ color: 'var(--text-strong)' }}>{email}</strong>. Open it to set a new password.
+            </p>
+            <button
+              onClick={onClose}
+              style={{
+                width: '100%', padding: '13px', borderRadius: '14px', border: 'none',
+                background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              Got it
+            </button>
+          </>
+        ) : (
+          <>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 800, color: 'var(--text-strong)' }}>
+              Reset your password
+            </h3>
+            <p style={{ margin: '0 0 20px', fontSize: '13.5px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Enter your email and we'll send you a link to set a new password.
+            </p>
+            <form onSubmit={handleSubmit}>
+              <input
+                type="email"
+                placeholder="Student email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                style={{ ...inputStyle, marginBottom: error ? '8px' : '18px' }}
+                autoFocus
+              />
+              {error && (
+                <p style={{ color: '#EF4444', fontSize: '12.5px', margin: '0 0 14px', fontWeight: 600 }}>{error}</p>
+              )}
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  width: '100%', padding: '13px', borderRadius: '14px', border: 'none',
+                  background: 'var(--app-accent)', color: '#fff', fontWeight: 700, fontSize: '14px',
+                  cursor: 'pointer', marginBottom: '10px', opacity: loading ? 0.7 : 1,
+                }}
+              >
+                {loading ? 'Sending...' : 'Send Reset Link'}
+              </button>
+            </form>
+            <button
+              onClick={onClose}
+              style={{
+                width: '100%', padding: '13px', borderRadius: '14px',
+                border: '1px solid var(--app-border-soft)', background: 'transparent',
+                color: 'var(--text-strong)', fontWeight: 700, fontSize: '14px', cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          </>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
 function AuthScreen({ onSignUpSuccess }) {
   const [view, setView] = useState('login') // 'login' | 'signup'
 
@@ -95,6 +225,7 @@ function AuthScreen({ onSignUpSuccess }) {
   const [suLoading, setSuLoading] = useState(false)
   const [suMessage, setSuMessage] = useState('')
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -213,6 +344,15 @@ function AuthScreen({ onSignUpSuccess }) {
                 {loginMessage}
               </p>
             )}
+
+            <div style={{ textAlign: 'center', marginTop: '18px' }}>
+              <span
+                onClick={() => setForgotPasswordOpen(true)}
+                style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                Forgot password?
+              </span>
+            </div>
           </div>
         </div>
 
@@ -273,6 +413,15 @@ function AuthScreen({ onSignUpSuccess }) {
 
       <AnimatePresence>
         {showConfirmModal && <ConfirmEmailModal onDismiss={dismissConfirmModal} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {forgotPasswordOpen && (
+          <ForgotPasswordModal
+            initialEmail={loginEmail}
+            onClose={() => setForgotPasswordOpen(false)}
+          />
+        )}
       </AnimatePresence>
     </div>
   )

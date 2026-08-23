@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 // TODO: keep in sync with Onboarding.jsx's SUPPORT_EMAIL constant if that
 // one ever changes — duplicated here so this file has no dependency on
 // Onboarding.jsx.
-const SUPPORT_EMAIL = 'support@polynet.app'
+const SUPPORT_EMAIL = 'polynetzim@gmail.com'
 
 const s = {
   page: {

@@ -7,6 +7,7 @@ import SplashScreen from './SplashScreen'
 import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
 import TermsScreen from './TermsScreen'
+import ResetPasswordScreen from './ResetPasswordScreen'
 import React, { Suspense, lazy } from 'react'
 
 const Feed = lazy(() => import('./Feed'))
@@ -157,6 +158,10 @@ function App() {
   // Conditions. Same "default true" reasoning as hasSeenWalkthrough above:
   // avoids a flash of TermsScreen before checkUserProfile has actually run.
   const [termsAccepted, setTermsAccepted] = useState(true)
+  // True from the moment a PASSWORD_RECOVERY auth event fires until the
+  // person finishes setting a new password on ResetPasswordScreen. Gates
+  // rendering above everything else, including the normal session checks.
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [checking, setChecking] = useState(true)
   const [networkError, setNetworkError] = useState(false)
   const [retrying, setRetrying] = useState(false)
@@ -247,6 +252,7 @@ function App() {
         setIsAdminUser(false)
         setHasSeenWalkthrough(true)
         setTermsAccepted(true)
+        setPasswordRecovery(false)
         setNetworkError(false)
         setChecking(false)
         return
@@ -266,8 +272,22 @@ function App() {
   // session already exists, on subscribe). No separate manual getSession()
   // call, so there's no race between two competing resolutions.
   useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession)
+
+      if (event === 'PASSWORD_RECOVERY') {
+        // The person just landed back here after tapping the reset link in
+        // their email. Supabase parsed the recovery tokens from the URL
+        // automatically and handed us this event along with a temporary
+        // session — good only for setting a new password via updateUser(),
+        // not for using the app. Skip the normal onboarding/terms flow
+        // entirely; the render gate for passwordRecovery short-circuits
+        // everything else below until they finish.
+        setPasswordRecovery(true)
+        setChecking(false)
+        return
+      }
+
       if (newSession) {
         // A session just appeared (fresh login, or the initial mount fire).
         // Re-gate rendering behind the loading screen until we actually know
@@ -284,6 +304,7 @@ function App() {
         setIsAdminUser(false)
         setHasSeenWalkthrough(true)
         setTermsAccepted(true)
+        setPasswordRecovery(false)
         setChecking(false)
       }
     })
@@ -315,6 +336,7 @@ function App() {
           setIsAdminUser(false)
           setHasSeenWalkthrough(true)
           setTermsAccepted(true)
+          setPasswordRecovery(false)
           setNetworkError(false)
           setChecking(false)
           setRetrying(false)
@@ -553,6 +575,23 @@ function App() {
   if (checking) return <ComingSoonDots />
   if (confirmingOnReturn) return <LoggingInScreen />
   if (networkError) return <NetworkErrorScreen onRetry={handleRetry} retrying={retrying} />
+
+  // Takes priority over everything below, including onboarding — a person
+  // resetting their password isn't trying to use the app yet.
+  if (passwordRecovery) {
+    return (
+      <ResetPasswordScreen
+        onComplete={() => {
+          setPasswordRecovery(false)
+          // They now have a normal, valid session (the recovery session
+          // becomes a real one once the password's been set) — re-run the
+          // usual profile check so they land wherever they'd normally land.
+          setChecking(true)
+          checkUserProfile(session)
+        }}
+      />
+    )
+  }
 
   if (session && onboarded === false) {
     // Onboarding writes directly to the DB itself — once it calls onComplete,
