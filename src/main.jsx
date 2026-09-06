@@ -14,3 +14,12 @@ createRoot(document.getElementById('root')).render(
     </ThemeProvider>
   </StrictMode>
 )
+
+// Registers sw.js so the app meets Chrome/Android's installability
+// requirement for a real standalone launch (its own window, no address
+// bar) instead of a home-screen shortcut that just reopens a browser tab.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+  })
+}

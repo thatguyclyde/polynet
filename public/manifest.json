@@ -1,10 +1,12 @@
 {
+  "id": "/",
   "name": "PolyNet",
   "short_name": "PolyNet",
   "description": "Your campus network — news, marketplace, feed and chat in one place.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#FFFFFF",
   "theme_color": "#7C3AED",
