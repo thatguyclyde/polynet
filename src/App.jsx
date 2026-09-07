@@ -8,7 +8,7 @@ import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
 import TermsScreen from './TermsScreen'
 import ResetPasswordScreen from './ResetPasswordScreen'
-import { useBackClose } from './useBackClose'
+import useBackClose from './useBackClose'
 import InstallPrompt from './InstallPrompt'
 import React, { Suspense, lazy } from 'react'
 
@@ -552,8 +552,10 @@ function App() {
   // so these hooks run on every render — both are no-ops (isOpen === false)
   // whenever page is already 'feed' or Profile isn't open, which covers
   // all of those earlier screens automatically.
-  useBackClose(page !== 'feed', () => setPage('feed'))
-  useBackClose(showProfile, () => setShowProfile(false))
+  useBackClose(page !== 'feed', () => setPage('feed'), 'home-tab')
+  useBackClose(showProfile, () => setShowProfile(false), 'profile')
+  useBackClose(chatThreadOpen, () => setChatThreadOpen(false), 'chat-thread')
+  useBackClose(listingDetailOpen, () => setListingDetailOpen(false), 'listing-detail')
 
   function handleTabClick(targetId) {
     if (navigator.vibrate) navigator.vibrate(8)
@@ -711,6 +713,7 @@ function App() {
           </motion.div>
         </div>
         </Suspense>
+        
 
         {/* Bottom tab bar — numbered badges instead of plain dots. Hidden
             while the keyboard is up so it doesn't float on top of it. */}
