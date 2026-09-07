@@ -8,6 +8,8 @@ import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
 import TermsScreen from './TermsScreen'
 import ResetPasswordScreen from './ResetPasswordScreen'
+import { useBackClose } from './useBackClose'
+import InstallPrompt from './InstallPrompt'
 import React, { Suspense, lazy } from 'react'
 
 const Feed = lazy(() => import('./Feed'))
@@ -170,6 +172,11 @@ function App() {
   const [myAvatar, setMyAvatar] = useState(null)
 
   const [pendingChat, setPendingChat] = useState(null)
+  // These two only reflect state that actually lives inside Chats.jsx and
+  // Polymart.jsx (passed up via onThreadOpenChange / onListingOpenChange)
+  // — so the back-button handling for "close the open thread" / "close the
+  // open listing" belongs in those files, not here. Flipping these booleans
+  // from App alone wouldn't actually close anything inside those screens.
   const [chatThreadOpen, setChatThreadOpen] = useState(false)
   const [listingDetailOpen, setListingDetailOpen] = useState(false)
 
@@ -539,6 +546,15 @@ function App() {
     return () => clearInterval(interval)
   }, [session, page])
 
+  // Phone back button/gesture returns to the Home tab instead of leaving
+  // the app, and closes the Profile overlay instead of leaving the app.
+  // Placed before the early returns below (splash/checking/onboarding/etc.)
+  // so these hooks run on every render — both are no-ops (isOpen === false)
+  // whenever page is already 'feed' or Profile isn't open, which covers
+  // all of those earlier screens automatically.
+  useBackClose(page !== 'feed', () => setPage('feed'))
+  useBackClose(showProfile, () => setShowProfile(false))
+
   function handleTabClick(targetId) {
     if (navigator.vibrate) navigator.vibrate(8)
     setPage(targetId)
@@ -633,6 +649,7 @@ function App() {
         `}</style>
 
         <Suspense fallback={<div style={{minHeight: '100vh', background: 'var(--page-bg)'}} /> }>
+          {!hideChrome && <InstallPrompt />}
           {!hideChrome && (
           <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, zIndex: 150,
