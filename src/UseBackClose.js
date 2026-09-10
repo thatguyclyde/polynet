@@ -76,11 +76,17 @@ export function useBackClose(isOpen, onClose, key = 'overlay') {
       // a backdrop, a Cancel button) rather than the back button, the
       // history entry we pushed is still sitting there unused. Pop it off
       // so the stack doesn't accumulate a phantom entry every time this
-      // overlay opens and closes — otherwise the NEXT back-button press
-      // would just land on that stale entry and do nothing visible.
+      // overlay opens and closes — but calling `history.back()` here can
+      // accidentally navigate the app (e.g. during sign-out). Instead of
+      // going back, replace the current history entry to remove our
+      // sentinel state without moving the user's position in the stack.
       if (pushedRef.current) {
         pushedRef.current = false
-        window.history.back()
+        try {
+          window.history.replaceState(null, '')
+        } catch (e) {
+          // ignore in environments that disallow history manipulation
+        }
       }
     }
   }, [isOpen, key])
