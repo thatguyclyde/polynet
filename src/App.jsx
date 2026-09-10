@@ -8,7 +8,7 @@ import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
 import TermsScreen from './TermsScreen'
 import ResetPasswordScreen from './ResetPasswordScreen'
-import UseBackClose from './usebackClose'
+import useBackClose from './UseBackClose'
 import InstallPrompt from './InstallPrompt'
 import React, { Suspense, lazy } from 'react'
 
