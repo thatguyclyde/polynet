@@ -995,6 +995,13 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
 
   async function sendMessage() {
     console.log('[chat] sendMessage called, text=', JSON.stringify(text))
+    try {
+      console.log('[chat] current session user id=', session?.user?.id)
+      const _s = await supabase.auth.getSession()
+      console.log('[chat] supabase.auth.getSession()=', _s)
+    } catch (e) {
+      console.warn('[chat] could not read supabase session', e)
+    }
     if (!text.trim()) return
     if (sending) return
     setSending(true)
