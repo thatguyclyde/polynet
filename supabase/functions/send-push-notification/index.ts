@@ -19,7 +19,10 @@ import webpush from 'npm:web-push@3'
 
 Deno.serve(async (req) => {
   try {
-    const { title, body, url } = await req.json()
+    // Accept an optional `user_id` field to limit the push to a
+    // particular user's subscriptions (used for notifying a message
+    // recipient). If omitted, the function fans out to all subscriptions.
+    const { title, body, url, user_id } = await req.json()
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -31,9 +34,15 @@ Deno.serve(async (req) => {
       Deno.env.get('VAPID_PRIVATE_KEY')!
     )
 
-    const { data: subs, error } = await supabase
+    let subsQuery = supabase
       .from('push_subscriptions')
       .select('id, endpoint, p256dh, auth')
+
+    if (user_id) {
+      subsQuery = subsQuery.eq('user_id', user_id)
+    }
+
+    const { data: subs, error } = await subsQuery
 
     if (error) {
       return new Response(JSON.stringify({ error: error.message }), { status: 500 })
