@@ -3,8 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import Icon from './Icon'
 import { useTheme } from './ThemeContext'
+import { usePushNotifications } from './usePushNotifications'
 import { getDisplayName } from './DisplayName'
 import ReportsScreen from './ReportsScreen'
+import { useBackClose } from './useBackClose'
 
 const DEPARTMENTS = [
   'Accountancy',
@@ -537,6 +539,20 @@ function BlockedUsersPage({ session, onBack }) {
 
 function Profile({ session, onBack }) {
   const { isDark, toggleTheme } = useTheme()
+  const { supported: pushSupported, permission: pushPermission, isSubscribed, subscribing, subscribe, unsubscribe } = usePushNotifications(session)
+
+  async function handlePushToggle(next) {
+    if (next) {
+      const result = await subscribe()
+      if (!result.ok && result.reason === 'denied') {
+        // Browser-level permission was denied — nothing more this app
+        // can do until the person re-enables it in their browser's own
+        // site settings, so no point retrying silently.
+      }
+    } else {
+      await unsubscribe()
+    }
+  }
   const [editMode, setEditMode] = useState(false)
   const [allPlatformSkills, setAllPlatformSkills] = useState([])
   const [fullName, setFullName] = useState('')
@@ -565,6 +581,20 @@ function Profile({ session, onBack }) {
 
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminTitle, setAdminTitle] = useState('')
+
+  // Phone back button/gesture closes whichever of these is open instead of
+  // leaving the app. Placed before the early returns below (loading /
+  // showReports / showBlockedUsers / infoPage) so these hooks run on every
+  // render — each is a no-op (isOpen === false) whenever that particular
+  // thing isn't open, which covers the loading state automatically.
+  useBackClose(showReports, () => setShowReports(false))
+  useBackClose(showBlockedUsers, () => setShowBlockedUsers(false))
+  useBackClose(!!infoPage, () => setInfoPage(null))
+  useBackClose(contactSheetOpen, () => setContactSheetOpen(false))
+  useBackClose(accountSheetOpen, () => setAccountSheetOpen(false))
+  useBackClose(changePasswordOpen, () => setChangePasswordOpen(false))
+  useBackClose(viewingAvatar, () => setViewingAvatar(false))
+  useBackClose(!!confirmModal, () => setConfirmModal(null))
 
   useEffect(() => {
     fetchProfile()
@@ -1133,6 +1163,19 @@ function Profile({ session, onBack }) {
             </div>
             <div style={{ background: 'var(--card-bg)', borderRadius: '18px', border: '1px solid var(--app-border)', padding: '4px 14px' }}>
               <SettingsRow icon="moon" label="Dark Mode" trailing={<Toggle checked={isDark} onChange={toggleTheme} />} />
+              {pushSupported && (
+                <SettingsRow
+                  icon="bell"
+                  label="Push Notifications"
+                  trailing={
+                    pushPermission === 'denied' ? (
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Blocked in browser</span>
+                    ) : (
+                      <Toggle checked={isSubscribed} onChange={handlePushToggle} disabled={subscribing} />
+                    )
+                  }
+                />
+              )}
               <SettingsRow icon="info" label="About PolyNet" onClick={() => setInfoPage('about')} />
               <SettingsRow icon="shield" label="Privacy Policy" onClick={() => setInfoPage('privacy')} />
               <SettingsRow icon="ban" label="Blocked Users" onClick={() => setShowBlockedUsers(true)} />
@@ -1283,9 +1326,17 @@ function SettingsRow({ icon, label, onClick, trailing, isLast }) {
   )
 }
 
-function Toggle({ checked, onChange }) {
+function Toggle({ checked, onChange, disabled }) {
   return (
-    <div onClick={onChange} style={{ width: '42px', height: '24px', borderRadius: '12px', background: checked ? 'var(--app-accent)' : 'var(--app-border-soft)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s' }}>
+    <div
+      onClick={disabled ? undefined : () => onChange(!checked)}
+      style={{
+        width: '42px', height: '24px', borderRadius: '12px',
+        background: checked ? 'var(--app-accent)' : 'var(--app-border-soft)',
+        position: 'relative', cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.6 : 1, transition: 'background 0.2s',
+      }}
+    >
       <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '3px', left: checked ? '21px' : '3px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
     </div>
   )

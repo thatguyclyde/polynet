@@ -281,7 +281,7 @@ function AuthScreen({ onSignUpSuccess }) {
     <div style={{
       minHeight: '100vh',
       background: 'var(--page-bg)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
       perspective: '1600px',
       padding: '24px',
@@ -410,6 +410,17 @@ function AuthScreen({ onSignUpSuccess }) {
           </div>
         </div>
       </motion.div>
+
+      {/* Visible for both SEO (this is the one page search engines can
+          actually see, since everything else sits behind login) and for
+          a first-time visitor who lands here with no context on what
+          PolyNet even is. */}
+      <p style={{
+        maxWidth: '320px', textAlign: 'center', margin: '22px 0 0',
+        fontSize: '12.5px', lineHeight: 1.6, color: 'var(--text-muted)',
+      }}>
+        PolyNet connects every Harare Polytechnic student to campus news, a peer marketplace, and each other's skills — all in one place.
+      </p>
 
       <AnimatePresence>
         {showConfirmModal && <ConfirmEmailModal onDismiss={dismissConfirmModal} />}
