@@ -993,15 +993,27 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   }
 
   async function sendMessage() {
+    console.log('[chat] sendMessage called, text=', JSON.stringify(text))
     if (!text.trim()) return
     setSending(true)
     const content = text.trim()
+    console.log('[chat] preparing to send, content=', content)
     setText('')
-    const { error } = await supabase.from('chat_messages').insert({
-      conversation_id: conversation.id,
-      sender_id: session.user.id,
-      content,
-    })
+    let insertErr = null
+    try {
+      const res = await supabase.from('chat_messages').insert({
+        conversation_id: conversation.id,
+        sender_id: session.user.id,
+        content,
+      })
+      // supabase JS may return { data, error }
+      insertErr = res?.error || null
+      console.log('[chat] insert result', res)
+    } catch (e) {
+      insertErr = e
+      console.error('[chat] insert threw', e)
+    }
+    const { error } = { error: insertErr }
     if (!error) {
       if (isPendingForMe) {
         await supabase.from('conversations').update({ status: 'accepted' }).eq('id', conversation.id)
@@ -1017,7 +1029,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
       }).eq('id', conversation.id)
       fetchMessages(false)
     } else {
-      console.error('Error sending message:', error.message)
+      console.error('Error sending message:', error && error.message ? error.message : error)
       setText(content)
     }
     setSending(false)
