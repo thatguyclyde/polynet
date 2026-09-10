@@ -11,19 +11,33 @@ begin
   -- call fails for any reason it doesn't abort the INSERT of the chat
   -- message itself (we don't want push failures to break chat delivery).
   BEGIN
-    perform net.http_post(
-      url := '<SUPABASE_PROJECT_URL>/functions/v1/send-push-notification',
-      headers := jsonb_build_object(
-        'Authorization', 'Bearer <SUPABASE_SERVICE_ROLE_KEY>',
-        'Content-Type', 'application/json'
-      ),
-      body := jsonb_build_object(
-        'title', 'New message',
-        'body', coalesce(new.body, 'You have a new message'),
-        'url', '/chats',
-        'user_id', new.recipient_id
-      )
-    );
+    -- Determine the recipient user id from the conversation row. The
+    -- chat_messages table uses `content` for the message text, not
+    -- `body`, and there is no `recipient_id` column — compute it here.
+    DECLARE
+      _recipient uuid;
+    BEGIN
+      SELECT
+        CASE WHEN c.buyer_id = new.sender_id THEN c.seller_id ELSE c.buyer_id END
+      INTO _recipient
+      FROM conversations c
+      WHERE c.id = new.conversation_id
+      LIMIT 1;
+
+      perform net.http_post(
+        url := '<SUPABASE_PROJECT_URL>/functions/v1/send-push-notification',
+        headers := jsonb_build_object(
+          'Authorization', 'Bearer <SUPABASE_SERVICE_ROLE_KEY>',
+          'Content-Type', 'application/json'
+        ),
+        body := jsonb_build_object(
+          'title', 'New message',
+          'body', coalesce(new.content, 'You have a new message'),
+          'url', '/chats',
+          'user_id', _recipient
+        )
+      );
+    END;
   EXCEPTION WHEN OTHERS THEN
     -- Log the failure as a NOTICE so it's visible in DB logs but
     -- crucially do NOT re-raise — allow the insert to succeed.
