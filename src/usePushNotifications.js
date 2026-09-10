@@ -46,9 +46,12 @@ export function usePushNotifications(session) {
 
     setSubscribing(true)
     try {
+      console.log('[push] starting subscribe flow for user', session.user.id)
+      console.log('[push] VAPID public key present:', !!VAPID_PUBLIC_KEY)
       const permissionResult = await Notification.requestPermission()
       setPermission(permissionResult)
       if (permissionResult !== 'granted') {
+        console.warn('[push] permission not granted:', permissionResult)
         return { ok: false, reason: 'denied' }
       }
 
@@ -59,6 +62,7 @@ export function usePushNotifications(session) {
       })
 
       const json = subscription.toJSON()
+      console.log('[push] obtained subscription', json)
       const { error } = await supabase.from('push_subscriptions').upsert(
         {
           user_id: session.user.id,
@@ -70,11 +74,12 @@ export function usePushNotifications(session) {
       )
 
       if (error) {
-        console.error('Error saving push subscription:', error.message)
+        console.error('Error saving push subscription:', error.message, error)
         return { ok: false, reason: 'save_failed' }
       }
 
       setIsSubscribed(true)
+      console.log('[push] subscription saved for user', session.user.id)
       return { ok: true }
     } finally {
       setSubscribing(false)
@@ -86,6 +91,7 @@ export function usePushNotifications(session) {
     const registration = await navigator.serviceWorker.ready
     const existing = await registration.pushManager.getSubscription()
     if (existing) {
+      console.log('[push] unsubscribing endpoint', existing.endpoint)
       await supabase.from('push_subscriptions').delete().eq('endpoint', existing.endpoint)
       await existing.unsubscribe()
     }

@@ -46,6 +46,7 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/' },
   }
 
+  console.log('[sw] push event received', data)
   event.waitUntil(self.registration.showNotification(title, options))
 })
 
@@ -54,7 +55,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const targetUrl = event.notification.data?.url || '/'
-
+  console.log('[sw] notification click, opening', targetUrl)
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {

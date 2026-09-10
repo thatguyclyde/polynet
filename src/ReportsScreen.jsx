@@ -14,7 +14,6 @@ function timeAgo(dateStr) {
 function whatsappNotifyUrl(number, text) {
   return `whatsapp://send?phone=${number}&text=${encodeURIComponent(text)}`
 }
-
 const WHATSAPP_NUMBER = '263787525495'
 
 function ReportsScreen({ onBack }) {
