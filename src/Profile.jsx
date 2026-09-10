@@ -6,7 +6,7 @@ import { useTheme } from './ThemeContext'
 import { usePushNotifications } from './usePushNotifications'
 import { getDisplayName } from './DisplayName'
 import ReportsScreen from './ReportsScreen'
-import { useBackClose } from './useBackClose'
+import { useBackClose } from './usebackClose'
 
 const DEPARTMENTS = [
   'Accountancy',
