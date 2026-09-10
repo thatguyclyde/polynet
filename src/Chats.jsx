@@ -850,6 +850,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   // stays the single source of truth regardless of entry point.
   const [otherIsAdmin, setOtherIsAdmin] = useState(!!conversation.otherIsAdmin)
   const bottomRef = useRef(null)
+  const inputRef = useRef(null)
 
   // Message long-press-to-delete — same stationary-finger requirement as
   // the Inbox row long press, so scrolling the message list never gets
@@ -995,10 +996,10 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
   async function sendMessage() {
     console.log('[chat] sendMessage called, text=', JSON.stringify(text))
     if (!text.trim()) return
+    if (sending) return
     setSending(true)
     const content = text.trim()
     console.log('[chat] preparing to send, content=', content)
-    setText('')
     let insertErr = null
     try {
       const res = await supabase.from('chat_messages').insert({
@@ -1006,15 +1007,19 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         sender_id: session.user.id,
         content,
       })
-      // supabase JS may return { data, error }
       insertErr = res?.error || null
       console.log('[chat] insert result', res)
     } catch (e) {
       insertErr = e
       console.error('[chat] insert threw', e)
     }
+
     const { error } = { error: insertErr }
     if (!error) {
+      // Only clear the input and dismiss keyboard after a successful insert
+      setText('')
+      try { inputRef.current?.blur() } catch (e) { /* ignore */ }
+
       if (isPendingForMe) {
         await supabase.from('conversations').update({ status: 'accepted' }).eq('id', conversation.id)
         setStatus('accepted')
@@ -1030,6 +1035,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
       fetchMessages(false)
     } else {
       console.error('Error sending message:', error && error.message ? error.message : error)
+      // keep the user's text so they can retry
       setText(content)
     }
     setSending(false)
@@ -1345,6 +1351,7 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
         }}
       >
         <input
+          ref={inputRef}
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') sendMessage() }}
