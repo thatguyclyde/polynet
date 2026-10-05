@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Newspaper, Store, MessageCircle, UserCircle, WifiOff } from 'lucide-react'
 import { supabase } from './supabase'
 import { isExpiredAuthError, recoverExpiredSession } from './authRecovery'
+import { fetchNotifications, markNotificationsRead } from './notifications'
 import SplashScreen from './SplashScreen'
 import AuthScreen from './AuthScreen'
 import Onboarding from './Onboarding'
@@ -169,6 +170,8 @@ function App() {
   const [retrying, setRetrying] = useState(false)
   const [page, setPage] = useState('feed')
   const [showProfile, setShowProfile] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [notifications, setNotifications] = useState([])
   const [myAvatar, setMyAvatar] = useState(null)
 
   const [pendingChat, setPendingChat] = useState(null)
@@ -326,6 +329,42 @@ function App() {
   useEffect(() => {
     setFeedScrollY(0)
   }, [page])
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setNotifications([])
+      setShowNotifications(false)
+      return
+    }
+
+    async function loadNotifications() {
+      const { data, error } = await fetchNotifications(session.user.id, 20)
+      if (error) {
+        console.error('Error loading notifications:', error.message)
+        return
+      }
+      setNotifications(data || [])
+    }
+
+    loadNotifications()
+    const interval = setInterval(loadNotifications, 15000)
+    return () => clearInterval(interval)
+  }, [session?.user?.id])
+
+  const unreadNotifications = notifications.filter(n => !n.read).length
+
+  async function handleNotificationsToggle() {
+    const next = !showNotifications
+    setShowNotifications(next)
+    if (!next || !session?.user?.id) return
+
+    const { error } = await markNotificationsRead(session.user.id)
+    if (error) {
+      console.error('Error marking notifications as read:', error.message)
+      return
+    }
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+  }
 
   async function handleRetry() {
     setRetrying(true)
@@ -658,24 +697,92 @@ function App() {
             display: 'flex', justifyContent: 'flex-end', padding: '14px 16px',
             pointerEvents: 'none',
           }}>
-            <motion.div
-              whileTap={{ scale: 0.85 }}
-              onClick={() => setShowProfile(true)}
-              animate={{ x: feedIsCollapsed ? -50 : 0 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-              style={{
-                width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
-                background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', pointerEvents: 'auto',
-                border: '2px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-              }}
-            >
-              {myAvatar ? (
-                <img src={myAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                <UserCircle size={22} color="var(--app-accent)" />
-              )}
-            </motion.div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', pointerEvents: 'auto' }}>
+              <div style={{ position: 'relative' }}>
+                <motion.button
+                  whileTap={{ scale: 0.85 }}
+                  onClick={handleNotificationsToggle}
+                  aria-label="Notifications"
+                  style={{
+                    width: '38px', height: '38px', borderRadius: '50%',
+                    background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', border: '2px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+                    color: 'var(--app-accent)',
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                    <path d="M10 21a2 2 0 0 0 4 0" />
+                  </svg>
+                </motion.button>
+                {unreadNotifications > 0 && (
+                  <div style={{
+                    position: 'absolute', top: '-6px', right: '-6px', minWidth: '16px', height: '16px',
+                    borderRadius: '999px', background: '#EF4444', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 800, fontSize: '9px', lineHeight: 1, padding: '0 4px', border: '2px solid var(--card-bg)',
+                  }}>
+                    {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                  </div>
+                )}
+                <AnimatePresence>
+                  {showNotifications && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.15 }}
+                      style={{
+                        position: 'absolute', right: 0, top: '46px', width: '280px', maxHeight: '320px', overflowY: 'auto',
+                        background: 'var(--card-bg)', border: '1px solid var(--app-border)', borderRadius: '16px', padding: '10px',
+                        boxShadow: '0 12px 28px rgba(0,0,0,0.18)', zIndex: 20,
+                      }}
+                    >
+                      {notifications.length === 0 ? (
+                        <div style={{ padding: '16px 10px', fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                          No notifications yet.
+                        </div>
+                      ) : (
+                        notifications.map(n => (
+                          <div key={n.id} style={{
+                            borderRadius: '12px', background: n.read ? 'transparent' : 'var(--app-accent-soft)',
+                            border: n.read ? '1px solid var(--app-border-soft)' : '1px solid var(--app-accent)',
+                            padding: '10px 10px', marginBottom: '8px',
+                          }}>
+                            <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-strong)', marginBottom: '4px' }}>
+                              {n.type === 'message' ? 'Message' : n.type === 'like' ? 'Like' : n.type === 'comment' ? 'Comment' : 'Update'}
+                            </div>
+                            <div style={{ fontSize: '12.5px', color: 'var(--text-body)', lineHeight: 1.4 }}>
+                              {n.content}
+                            </div>
+                            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                              {new Date(n.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <motion.div
+                whileTap={{ scale: 0.85 }}
+                onClick={() => setShowProfile(true)}
+                animate={{ x: feedIsCollapsed ? -50 : 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+                style={{
+                  width: '38px', height: '38px', borderRadius: '50%', overflow: 'hidden',
+                  background: 'var(--app-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', pointerEvents: 'auto',
+                  border: '2px solid var(--card-bg)', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+                }}
+              >
+                {myAvatar ? (
+                  <img src={myAvatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <UserCircle size={22} color="var(--app-accent)" />
+                )}
+              </motion.div>
+            </div>
           </div>
         )}
 

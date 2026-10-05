@@ -6,6 +6,7 @@ import { FeedSkeleton } from './Skeleton'
 import PublicProfileCard from './PublicProfileCard'
 import { useTheme } from './ThemeContext'
 import { getDisplayName } from './DisplayName'
+import { createNotification } from './notifications'
 
 const CATEGORY_STYLES = {
   school: { label: 'School Related', color: 'var(--success)', bg: 'rgba(22,163,74,0.12)' },
@@ -654,6 +655,20 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
           return next
         })
         setLikeCounts(prev => ({ ...prev, [postId]: Math.max(0, (prev[postId] || 0) - 1) }))
+      } else {
+        const targetPost = posts.find(p => p.id === postId)
+        if (targetPost?.author_id && targetPost.author_id !== session.user.id) {
+          const { error: notifyError } = await createNotification({
+            user_id: targetPost.author_id,
+            type: 'like',
+            content: 'Someone liked your post',
+            source_user_id: session.user.id,
+            source_type: 'feed_post',
+            source_id: postId,
+            metadata: { post_id: postId },
+          })
+          if (notifyError) console.error('Error creating like notification:', notifyError.message)
+        }
       }
     }
   }
@@ -711,6 +726,20 @@ function Feed({ session, onStartChat, scrollY = 0 }) {
     setCommentLoading(true)
     const { error } = await supabase.from('feed_comments').insert({ post_id: postId, author_id: session.user.id, content: newComment })
     if (!error) {
+      const targetPost = posts.find(p => p.id === postId)
+      if (targetPost?.author_id && targetPost.author_id !== session.user.id) {
+        const { error: notifyError } = await createNotification({
+          user_id: targetPost.author_id,
+          type: 'comment',
+          content: 'Someone commented on your post',
+          source_user_id: session.user.id,
+          source_type: 'feed_post',
+          source_id: postId,
+          metadata: { post_id: postId },
+        })
+        if (notifyError) console.error('Error creating comment notification:', notifyError.message)
+      }
+
       const { data } = await supabase
         .from('feed_comments')
         .select('id, content, created_at, author_id, profiles(full_name, is_admin, admin_title)')

@@ -20,6 +20,46 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
+self.addEventListener('push', (event) => {
+  if (!event.data) return
+
+  let payload = { title: 'PolyNet', body: 'You have a new notification', url: '/' }
+  try {
+    payload = event.data.json()
+  } catch (err) {
+    payload = { title: 'PolyNet', body: event.data.text(), url: '/' }
+  }
+
+  const options = {
+    body: payload.body || payload.message || 'You have a new notification',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: payload.url || '/' },
+    tag: payload.tag || 'polynet-notification',
+  }
+
+  event.waitUntil(self.registration.showNotification(payload.title || 'PolyNet', options))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/'
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsList) => {
+      const matchingClient = clientsList.find((client) => 'focus' in client)
+      if (matchingClient) {
+        return matchingClient.focus().then(() => {
+          if (matchingClient.url !== url) {
+            return matchingClient.navigate(url)
+          }
+        })
+      }
+      return self.clients.openWindow(url)
+    })
+  )
+})
+
 self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(event.request))
 })

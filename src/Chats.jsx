@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 import Icon from './Icon'
 import PublicProfileCard from './PublicProfileCard'
 import { useTheme } from './ThemeContext'
+import { createNotification } from './notifications'
 
 const CHAT_BORDER_PURPLE = 'rgba(124,58,237,0.35)'
 const UNREAD_BLUE = '#1D9BF0'
@@ -1023,6 +1024,19 @@ function ChatThread({ session, conversation, onBack, onConversationDeleted }) {
 
     const { error } = { error: insertErr }
     if (!error) {
+      const recipientId = conversation.buyerId === session.user.id ? conversation.sellerId : conversation.buyerId
+      if (recipientId && recipientId !== session.user.id) {
+        const { error: notifyError } = await createNotification({
+          user_id: recipientId,
+          type: 'message',
+          content: 'You have a new message',
+          source_user_id: session.user.id,
+          source_type: 'chat_message',
+          metadata: { conversation_id: conversation.id, preview: content },
+        })
+        if (notifyError) console.error('Error creating message notification:', notifyError.message)
+      }
+
       // Only clear the input and dismiss keyboard after a successful insert
       setText('')
       try { inputRef.current?.blur() } catch (e) { /* ignore */ }
